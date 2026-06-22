@@ -216,3 +216,38 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+# -------------------------
+# Project-specific: EODHD / data science files
+# -------------------------
+
+# Environment variables / API keys
+.env.*
+!.env.example
+
+# Local data files from EODHD
+data/raw/
+data/interim/
+data/processed/
+
+# Generated outputs
+outputs/
+logs/
+
+# Local databases
+*.sqlite
+*.sqlite3
+*.db
+
+# Keep empty folder placeholders if used
+!data/raw/.gitkeep
+!data/interim/.gitkeep
+!data/processed/.gitkeep
+!outputs/.gitkeep
+!logs/.gitkeep
+
+# Notebook checkpoint files
+.ipynb_checkpoints/
+
+# OS files
+.DS_Store
+Thumbs.db
