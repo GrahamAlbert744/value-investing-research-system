@@ -1,51 +1,99 @@
 """
-EODHD API client.
+Reusable EODHD API client.
 
-MVP purpose:
-- Pull filtered fundamentals sections for a single ticker.
-- Keep this small and readable while we learn the EODHD data structure.
+This module:
+- Loads EODHD credentials from .env
+- Uses the recommended v1.1 fundamentals endpoint by default
+- Returns JSON data
+- Avoids printing or saving the API token
+- Sanitizes API errors so the token does not appear in tracebacks
 """
 
+from __future__ import annotations
+
 import os
+from dataclasses import dataclass
 from typing import Any
 
 import requests
 from dotenv import load_dotenv
 
 
-load_dotenv()
-
-
+@dataclass
 class EODHDClient:
-    """Small EODHD API client for filtered fundamentals requests."""
+    """Small reusable client for EODHD API calls."""
 
-    def __init__(self, api_token: str | None = None, timeout: int = 30):
-        self.api_token = api_token or os.getenv("6a345aab83c1e8.67490950") or "demo"
-        self.timeout = timeout
-        self.base_url = "https://eodhd.com/api"
+    api_token: str
+    base_url: str = "https://eodhd.com/api/v1.1"
+    timeout: int = 30
 
-    def get_fundamentals_section(self, ticker: str, section: str) -> dict[str, Any]:
-        """
-        Fetch one filtered fundamentals section for a ticker.
+    @classmethod
+    def from_env(cls) -> "EODHDClient":
+        """Create an EODHD client using credentials from local .env."""
+        load_dotenv()
 
-        Example:
-            client.get_fundamentals_section("AAPL.US", "General")
-        """
-        url = f"{self.base_url}/fundamentals/{ticker}"
-        params = {
+        api_token = os.getenv("EODHD_API_TOKEN")
+        base_url = os.getenv("EODHD_BASE_URL", "https://eodhd.com/api/v1.1")
+
+        if not api_token:
+            raise ValueError(
+                "Missing EODHD_API_TOKEN. Add it to your local .env file."
+            )
+
+        return cls(api_token=api_token, base_url=base_url)
+
+    def _redact(self, text: str) -> str:
+        """Redact the API token from any text."""
+        return text.replace(self.api_token, "[REDACTED_API_TOKEN]")
+
+    def _get_json(
+        self,
+        endpoint: str,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Internal helper for safe EODHD GET requests."""
+        if params is None:
+            params = {}
+
+        request_params = {
+            **params,
             "api_token": self.api_token,
             "fmt": "json",
-            "filter": section,
         }
 
-        response = requests.get(url, params=params, timeout=self.timeout)
-        response.raise_for_status()
+        url = f"{self.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
+
+        response = requests.get(
+            url,
+            params=request_params,
+            timeout=self.timeout,
+        )
+
+        if response.status_code >= 400:
+            safe_url = self._redact(response.url)
+            safe_response_preview = self._redact(response.text[:500])
+
+            raise RuntimeError(
+                "EODHD request failed.\n"
+                f"Status code: {response.status_code}\n"
+                f"URL: {safe_url}\n"
+                f"Response preview: {safe_response_preview}"
+            )
 
         data = response.json()
 
         if not isinstance(data, dict):
-            raise ValueError(
-                f"Expected dict response for {ticker} {section}, got {type(data)}"
+            raise TypeError(
+                f"Expected dictionary response from EODHD, got {type(data).__name__}"
             )
 
         return data
+
+    def get_fundamentals(self, symbol: str) -> dict[str, Any]:
+        """
+        Get fundamentals JSON for one ticker.
+
+        Example:
+        AAPL.US
+        """
+        return self._get_json(f"fundamentals/{symbol}")
