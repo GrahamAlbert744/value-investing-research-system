@@ -29,7 +29,7 @@ def shorten_value(value: Any, max_length: int = 120) -> str:
 
 
 def infer_field_role(path: str) -> str:
-    """Assign a rough first-pass field role based on path."""
+    """Assign a rough first-pass field role based on the field path."""
     lower_path = path.lower()
 
     if lower_path.startswith("general"):
@@ -65,11 +65,7 @@ def flatten_json(
     parent_path: str = "",
     rows: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """
-    Recursively flatten JSON into field-level audit rows.
-
-    Lists are summarized rather than fully exploded to avoid giant audit files.
-    """
+    """Recursively flatten JSON into field-level audit rows."""
     if rows is None:
         rows = []
 
@@ -93,6 +89,7 @@ def flatten_json(
 
     elif isinstance(obj, list):
         path = parent_path
+
         rows.append(
             {
                 "path": f"{path}[]",
@@ -112,9 +109,8 @@ def flatten_json(
 
 
 def create_field_audit(data: dict[str, Any]) -> pd.DataFrame:
-    """Create a clean field audit DataFrame from EODHD fundamentals JSON."""
+    """Create a field audit DataFrame from EODHD fundamentals JSON."""
     rows = flatten_json(data)
-
     audit_df = pd.DataFrame(rows)
 
     if audit_df.empty:
