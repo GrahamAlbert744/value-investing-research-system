@@ -1,22 +1,21 @@
 """
-Check that the project can connect to EODHD.
+Diagnostic EODHD connection check.
 
-IMPORTANT:
-Do not put your real API key in this script.
+Purpose:
+- Confirm .env exists
+- Confirm EODHD_API_TOKEN is loaded
+- Test whether the token is valid
+- Test whether basic End-of-Day data works
+- Test whether Fundamentals works with demo
+- Test whether Fundamentals works with your personal token
+- Avoid printing the full API token
 
-Put your API key in a local .env file in the project root:
+Do NOT put your real API key in this script.
 
-    EODHD_API_TOKEN=PASTE_YOUR_REAL_EODHD_API_KEY_HERE
-    EODHD_BASE_URL=https://eodhd.com/api
+Put your key in .env:
+
+    EODHD_API_TOKEN=YOUR_REAL_EODHD_TOKEN_HERE
     EODHD_TEST_SYMBOL=AAPL.US
-
-This script confirms:
-- .env exists and is loaded
-- EODHD_API_TOKEN exists
-- EODHDClient imports
-- EODHD fundamentals call succeeds
-- top-level fields are visible
-- token is not printed
 """
 
 from __future__ import annotations
@@ -24,53 +23,118 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
+import requests
 from dotenv import load_dotenv
 
 
-# Ensure Python can import from the project root.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.eodhd_client import EODHDClient
+ENV_PATH = PROJECT_ROOT / ".env"
 
 
 def mask_token(token: str) -> str:
     """Show that a token exists without exposing it."""
+    if not token:
+        return "[MISSING]"
     if len(token) <= 8:
         return "[TOKEN_PRESENT_BUT_TOO_SHORT_TO_MASK]"
     return f"{token[:4]}...[REDACTED]...{token[-4:]}"
 
 
-def main() -> None:
-    env_path = PROJECT_ROOT / ".env"
+def safe_get_json(url: str, params: dict[str, Any], token: str) -> dict[str, Any]:
+    """
+    Make a GET request and return diagnostic information.
 
-    if not env_path.exists():
+    This function does NOT raise HTTPError, because those tracebacks can expose tokens.
+    """
+    try:
+        response = requests.get(url, params=params, timeout=30)
+
+        safe_url = response.url.replace(token, "[REDACTED_API_TOKEN]")
+
+        result = {
+            "ok": response.ok,
+            "status_code": response.status_code,
+            "url": safe_url,
+            "content_type": response.headers.get("Content-Type", ""),
+            "text_preview": response.text[:400].replace(token, "[REDACTED_API_TOKEN]"),
+            "json": None,
+        }
+
+        try:
+            result["json"] = response.json()
+        except Exception:
+            result["json"] = None
+
+        return result
+
+    except requests.RequestException as exc:
+        return {
+            "ok": False,
+            "status_code": None,
+            "url": url.replace(token, "[REDACTED_API_TOKEN]"),
+            "content_type": "",
+            "text_preview": str(exc).replace(token, "[REDACTED_API_TOKEN]"),
+            "json": None,
+        }
+
+
+def print_result(label: str, result: dict[str, Any]) -> None:
+    """Print one test result safely."""
+    print(f"\n--- {label} ---")
+    print(f"Success: {result['ok']}")
+    print(f"Status code: {result['status_code']}")
+    print(f"URL: {result['url']}")
+
+    if result["ok"]:
+        data = result["json"]
+        if isinstance(data, dict):
+            print("JSON type: dict")
+            print("Top-level fields:")
+            for field in sorted(data.keys())[:30]:
+                print(f"- {field}")
+        elif isinstance(data, list):
+            print("JSON type: list")
+            print(f"Rows returned: {len(data)}")
+            if data and isinstance(data[0], dict):
+                print("First row fields:")
+                for field in sorted(data[0].keys())[:30]:
+                    print(f"- {field}")
+        else:
+            print("JSON type: unavailable or unexpected")
+    else:
+        print("Response preview:")
+        print(result["text_preview"])
+
+
+def main() -> None:
+    if not ENV_PATH.exists():
         raise FileNotFoundError(
-            f"No .env file found at: {env_path}\n\n"
-            "Create one with:\n"
-            "EODHD_API_TOKEN=PASTE_YOUR_REAL_EODHD_API_KEY_HERE\n"
-            "EODHD_BASE_URL=https://eodhd.com/api\n"
+            f"No .env file found at: {ENV_PATH}\n"
+            "Create .env with:\n"
+            "EODHD_API_TOKEN=YOUR_REAL_EODHD_TOKEN_HERE\n"
             "EODHD_TEST_SYMBOL=AAPL.US\n"
         )
 
-    load_dotenv(dotenv_path=env_path)
+    load_dotenv(dotenv_path=ENV_PATH)
 
     token = os.getenv("EODHD_API_TOKEN")
-    base_url = os.getenv("EODHD_BASE_URL", "https://eodhd.com/api")
     symbol = os.getenv("EODHD_TEST_SYMBOL", "AAPL.US")
 
     if not token:
         raise ValueError(
-            "EODHD_API_TOKEN is missing from your local .env file.\n\n"
+            "EODHD_API_TOKEN is missing from .env.\n"
             "Open .env and add:\n"
-            "EODHD_API_TOKEN=PASTE_YOUR_REAL_EODHD_API_KEY_HERE\n"
+            "EODHD_API_TOKEN=YOUR_REAL_EODHD_TOKEN_HERE\n"
         )
 
-    if "PASTE_YOUR_REAL" in token or "YOUR_REAL" in token:
+    if "YOUR_REAL" in token or "PASTE" in token:
         raise ValueError(
-            "Your .env still contains the placeholder text.\n"
-            "Replace PASTE_YOUR_REAL_EODHD_API_KEY_HERE with your actual EODHD API key."
+            "Your .env still appears to contain placeholder text. "
+            "Replace it with your actual EODHD token."
         )
 
     print("Project root:", PROJECT_ROOT)
@@ -78,25 +142,62 @@ def main() -> None:
     print("Local .env loaded: yes")
     print("EODHD_API_TOKEN present: yes")
     print("Masked token:", mask_token(token))
-    print("Base URL:", base_url)
     print("Test symbol:", symbol)
 
-    client = EODHDClient(
-        api_token=token,
-        base_url=base_url,
+    # 1. Test whether your token is valid at all.
+    user_result = safe_get_json(
+        url="https://eodhd.com/api/user",
+        params={"api_token": token, "fmt": "json"},
+        token=token,
     )
+    print_result("User API token validity test", user_result)
 
-    data = client.get_fundamentals(symbol)
+    # 2. Test basic End-of-Day endpoint with your personal token.
+    eod_result = safe_get_json(
+        url=f"https://eodhd.com/api/eod/{symbol}",
+        params={"api_token": token, "fmt": "json"},
+        token=token,
+    )
+    print_result("Personal token EOD price test", eod_result)
 
-    print("\nEODHD API call succeeded: yes")
+    # 3. Test Fundamentals with demo token.
+    demo_fundamentals_result = safe_get_json(
+        url=f"https://eodhd.com/api/v1.1/fundamentals/{symbol}",
+        params={"api_token": "demo", "fmt": "json"},
+        token=token,
+    )
+    print_result("Demo token Fundamentals test", demo_fundamentals_result)
 
-    if isinstance(data, dict):
-        fields = sorted(data.keys())
-        print("\nTop-level EODHD fields:")
-        for field in fields:
-            print(f"- {field}")
+    # 4. Test Fundamentals with your personal token.
+    personal_fundamentals_result = safe_get_json(
+        url=f"https://eodhd.com/api/v1.1/fundamentals/{symbol}",
+        params={"api_token": token, "fmt": "json"},
+        token=token,
+    )
+    print_result("Personal token Fundamentals test", personal_fundamentals_result)
+
+    print("\n=== Diagnosis ===")
+
+    if user_result["ok"] and eod_result["ok"] and not personal_fundamentals_result["ok"]:
+        print(
+            "Your token appears valid, and basic EOD data works, "
+            "but Fundamentals access failed. This likely means your plan/key "
+            "does not include Fundamentals access."
+        )
+    elif not user_result["ok"]:
+        print(
+            "Your token may be invalid, expired, copied incorrectly, or not active. "
+            "Regenerate it in the EODHD dashboard and update .env."
+        )
+    elif personal_fundamentals_result["ok"]:
+        print(
+            "Your token works for Fundamentals. The EODHD connection is ready."
+        )
     else:
-        raise TypeError(f"Unexpected EODHD response type: {type(data).__name__}")
+        print(
+            "Mixed result. Review the status codes above. If Fundamentals is 403, "
+            "check EODHD plan permissions."
+        )
 
 
 if __name__ == "__main__":
