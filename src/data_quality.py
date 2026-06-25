@@ -1,252 +1,188 @@
 """
-Data-quality checks for normalized EODHD fundamentals.
+Data-quality checks for normalized EODHD metrics.
 
-MVP purpose:
-- Identify missing, stale, or suspicious fields.
-- Produce structured flags that can later feed scoring, filtering, and reports.
+This module checks:
+- missing required fields
+- numeric values outside expected bounds
+- fields that are missing from the dataset entirely
 """
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from pathlib import Path
 from typing import Any
 
-
-REQUIRED_FIELDS = [
-    "company_name",
-    "security_type",
-    "exchange",
-    "currency",
-    "sector",
-    "industry",
-    "market_cap",
-    "pe_ttm",
-    "operating_margin_ttm",
-    "eps_ttm",
-]
-
-OPTIONAL_FIELDS = [
-    "forward_pe",
-    "price_sales_ttm",
-    "price_book_mrq",
-    "peg_ratio",
-    "roe_ttm",
-    "roa_ttm",
-    "quarterly_revenue_growth_yoy",
-    "quarterly_earnings_growth_yoy",
-    "shares_outstanding",
-    "forward_annual_dividend_yield",
-    "payout_ratio",
-]
-
-STALE_DATE_FIELDS = {
-    "updated_at": 365,
-    "most_recent_quarter": 180,
-}
+import pandas as pd
+import yaml
 
 
-def parse_date(value: Any) -> date | None:
-    """Parse a date-like EODHD value into a Python date."""
+def load_data_quality_rules(rules_path: Path) -> dict[str, Any]:
+    """Load data-quality rules from YAML."""
+    if not rules_path.exists():
+        raise FileNotFoundError(f"Data-quality rules file not found: {rules_path}")
+
+    with rules_path.open("r", encoding="utf-8") as file:
+        rules = yaml.safe_load(file)
+
+    if not isinstance(rules, dict):
+        raise TypeError("Data-quality rules must load as a dictionary.")
+
+    return rules
+
+
+def is_missing(value: Any) -> bool:
+    """Return True if a value should be treated as missing."""
     if value is None:
+        return True
+
+    try:
+        if pd.isna(value):
+            return True
+    except TypeError:
+        pass
+
+    if isinstance(value, str) and value.strip() == "":
+        return True
+
+    return False
+
+
+def safe_float(value: Any) -> float | None:
+    """Convert value to float when possible."""
+    if is_missing(value):
         return None
 
-    if isinstance(value, date):
-        return value
-
-    if not isinstance(value, str):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
         return None
 
-    for fmt in ("%Y-%m-%d", "%Y/%m/%d"):
-        try:
-            return datetime.strptime(value[:10], fmt).date()
-        except ValueError:
-            continue
 
-    return None
-
-
-def add_flag(
-    flags: list[dict[str, Any]],
-    ticker: str,
-    field: str,
-    issue_type: str,
-    severity: str,
-    explanation: str,
-    recommended_action: str,
-) -> None:
-    """Append a structured data-quality flag."""
-    flags.append(
-        {
-            "ticker": ticker,
-            "field": field,
-            "issue_type": issue_type,
-            "severity": severity,
-            "explanation": explanation,
-            "recommended_action": recommended_action,
-        }
-    )
-
-
-def check_missing_fields(ticker: str, values: dict[str, Any]) -> list[dict[str, Any]]:
-    """Flag missing required and optional fields."""
-    flags: list[dict[str, Any]] = []
-
-    for field in REQUIRED_FIELDS:
-        if values.get(field) is None:
-            add_flag(
-                flags,
-                ticker,
-                field,
-                "missing_required",
-                "high",
-                f"Required field '{field}' is missing.",
-                "Do not use this company in the main ranked screener until the field is available or a fallback is implemented.",
-            )
-
-    for field in OPTIONAL_FIELDS:
-        if values.get(field) is None:
-            add_flag(
-                flags,
-                ticker,
-                field,
-                "missing_optional",
-                "low",
-                f"Optional field '{field}' is missing.",
-                "Allow scoring to continue, but reduce confidence if many optional fields are missing.",
-            )
-
-    return flags
-
-
-def check_stale_dates(
-    ticker: str,
-    values: dict[str, Any],
-    as_of: date | None = None,
+def check_required_fields(
+    df: pd.DataFrame,
+    required_fields: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Flag stale date fields."""
-    flags: list[dict[str, Any]] = []
-    as_of = as_of or date.today()
+    """Check whether required fields exist and are populated."""
+    results: list[dict[str, Any]] = []
 
-    for field, max_age_days in STALE_DATE_FIELDS.items():
-        parsed = parse_date(values.get(field))
+    for rule in required_fields:
+        field = rule["field"]
+        severity = rule.get("severity", "medium")
+        description = rule.get("description", "")
 
-        if parsed is None:
-            add_flag(
-                flags,
-                ticker,
-                field,
-                "missing_date",
-                "medium",
-                f"Date field '{field}' is missing or could not be parsed.",
-                "Keep the company, but mark freshness as uncertain.",
+        if field not in df.columns:
+            results.append(
+                {
+                    "rule_type": "required_field",
+                    "field": field,
+                    "severity": severity,
+                    "status": "fail",
+                    "issue": "field_missing_from_dataset",
+                    "description": description,
+                    "rows_affected": len(df),
+                }
             )
             continue
 
-        age_days = (as_of - parsed).days
+        missing_count = int(df[field].apply(is_missing).sum())
+        status = "pass" if missing_count == 0 else "fail"
 
-        if age_days > max_age_days:
-            add_flag(
-                flags,
-                ticker,
-                field,
-                "stale_field",
-                "medium",
-                f"Field '{field}' is {age_days} days old, exceeding the {max_age_days}-day threshold.",
-                "Refresh data or reduce confidence before ranking.",
-            )
-
-    return flags
-
-
-def check_suspicious_ratios(ticker: str, values: dict[str, Any]) -> list[dict[str, Any]]:
-    """Flag negative or nonsensical valuation/profitability ratios."""
-    flags: list[dict[str, Any]] = []
-
-    pe = values.get("pe_ttm")
-    if pe is not None:
-        if pe <= 0:
-            add_flag(
-                flags,
-                ticker,
-                "pe_ttm",
-                "negative_or_zero_pe",
-                "high",
-                "Trailing P/E is less than or equal to zero.",
-                "Do not treat this as a cheap stock. It should fail positive earnings or P/E filters.",
-            )
-        elif pe > 100:
-            add_flag(
-                flags,
-                ticker,
-                "pe_ttm",
-                "extreme_pe",
-                "medium",
-                "Trailing P/E is above 100.",
-                "Check whether EPS is stale, very small, or inconsistent with price.",
-            )
-
-    forward_pe = values.get("forward_pe")
-    if forward_pe is not None and forward_pe <= 0:
-        add_flag(
-            flags,
-            ticker,
-            "forward_pe",
-            "negative_or_zero_forward_pe",
-            "medium",
-            "Forward P/E is less than or equal to zero.",
-            "Exclude forward P/E from scoring unless validated.",
+        results.append(
+            {
+                "rule_type": "required_field",
+                "field": field,
+                "severity": severity,
+                "status": status,
+                "issue": "" if status == "pass" else "missing_values",
+                "description": description,
+                "rows_affected": missing_count,
+            }
         )
 
-    pb = values.get("price_book_mrq")
-    if pb is not None and pb < 0:
-        add_flag(
-            flags,
-            ticker,
-            "price_book_mrq",
-            "negative_price_book",
-            "medium",
-            "Price/book is negative.",
-            "Validate book value and equity before using this ratio.",
-        )
+    return results
 
-    ps = values.get("price_sales_ttm")
-    if ps is not None and ps < 0:
-        add_flag(
-            flags,
-            ticker,
-            "price_sales_ttm",
-            "negative_price_sales",
-            "medium",
-            "Price/sales is negative.",
-            "Validate revenue and market cap before using this ratio.",
-        )
 
-    operating_margin = values.get("operating_margin_ttm")
-    if operating_margin is not None:
-        if operating_margin < -1 or operating_margin > 1:
-            add_flag(
-                flags,
-                ticker,
-                "operating_margin_ttm",
-                "suspicious_margin",
-                "medium",
-                "Operating margin is outside the expected -100% to 100% range.",
-                "Validate margin scale before using this field.",
+def check_numeric_bounds(
+    df: pd.DataFrame,
+    numeric_bounds: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Check whether numeric fields fall within configured bounds."""
+    results: list[dict[str, Any]] = []
+
+    for rule in numeric_bounds:
+        field = rule["field"]
+        min_value = rule.get("min_value")
+        max_value = rule.get("max_value")
+        severity = rule.get("severity", "medium")
+        description = rule.get("description", "")
+
+        if field not in df.columns:
+            results.append(
+                {
+                    "rule_type": "numeric_bounds",
+                    "field": field,
+                    "severity": severity,
+                    "status": "skip",
+                    "issue": "field_missing_from_dataset",
+                    "description": description,
+                    "rows_affected": len(df),
+                }
             )
+            continue
 
-    return flags
+        values = df[field].apply(safe_float)
+
+        invalid_mask = values.isna()
+        if min_value is not None:
+            invalid_mask = invalid_mask | (values < float(min_value))
+        if max_value is not None:
+            invalid_mask = invalid_mask | (values > float(max_value))
+
+        affected_count = int(invalid_mask.sum())
+        status = "pass" if affected_count == 0 else "flag"
+
+        results.append(
+            {
+                "rule_type": "numeric_bounds",
+                "field": field,
+                "severity": severity,
+                "status": status,
+                "issue": "" if status == "pass" else "outside_expected_bounds_or_missing",
+                "description": description,
+                "rows_affected": affected_count,
+            }
+        )
+
+    return results
 
 
 def run_data_quality_checks(
-    ticker: str,
-    values: dict[str, Any],
-    as_of: date | None = None,
-) -> list[dict[str, Any]]:
-    """Run all MVP data-quality checks."""
-    flags: list[dict[str, Any]] = []
+    df: pd.DataFrame,
+    rules: dict[str, Any],
+) -> pd.DataFrame:
+    """Run all configured data-quality checks."""
+    all_results: list[dict[str, Any]] = []
 
-    flags.extend(check_missing_fields(ticker, values))
-    flags.extend(check_stale_dates(ticker, values, as_of=as_of))
-    flags.extend(check_suspicious_ratios(ticker, values))
+    all_results.extend(
+        check_required_fields(
+            df=df,
+            required_fields=rules.get("required_fields", []),
+        )
+    )
 
-    return flags
+    all_results.extend(
+        check_numeric_bounds(
+            df=df,
+            numeric_bounds=rules.get("numeric_bounds", []),
+        )
+    )
+
+    report = pd.DataFrame(all_results)
+
+    if report.empty:
+        return report
+
+    return report.sort_values(
+        by=["status", "severity", "rule_type", "field"],
+        ascending=True,
+    )

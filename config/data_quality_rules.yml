@@ -1,0 +1,74 @@
+metadata:
+  purpose: "First-pass data-quality rules for normalized EODHD metrics."
+  input_file: "outputs/normalized_metrics.csv"
+  output_file: "outputs/data_quality_report.csv"
+
+required_fields:
+  - field: source_symbol
+    severity: high
+    description: "Original ticker symbol used to pull data."
+  - field: ticker
+    severity: high
+    description: "Normalized ticker code."
+  - field: name
+    severity: high
+    description: "Company name."
+  - field: sector
+    severity: medium
+    description: "Company sector."
+  - field: industry
+    severity: medium
+    description: "Company industry."
+  - field: currency
+    severity: medium
+    description: "Reported currency."
+  - field: market_capitalization
+    severity: high
+    description: "Market capitalization."
+
+numeric_bounds:
+  - field: market_capitalization
+    min_value: 1
+    max_value:
+    severity: high
+    description: "Market cap should be positive."
+  - field: pe_ratio
+    min_value: 0
+    max_value: 200
+    severity: medium
+    description: "Very high or negative PE ratios should be flagged."
+  - field: trailing_pe
+    min_value: 0
+    max_value: 200
+    severity: medium
+    description: "Very high or negative trailing PE ratios should be flagged."
+  - field: forward_pe
+    min_value: 0
+    max_value: 200
+    severity: medium
+    description: "Very high or negative forward PE ratios should be flagged."
+  - field: price_sales_ttm
+    min_value: 0
+    max_value: 100
+    severity: medium
+    description: "Extremely high price/sales values should be reviewed."
+  - field: price_book_mrq
+    min_value: 0
+    max_value: 100
+    severity: medium
+    description: "Extremely high price/book values should be reviewed."
+  - field: dividend_yield
+    min_value: 0
+    max_value: 0.25
+    severity: low
+    description: "Dividend yields above 25% are unusual and should be reviewed."
+  - field: return_on_equity_ttm
+    min_value: -2
+    max_value: 2
+    severity: low
+    description: "ROE outside -200% to 200% should be reviewed."
+  - field: profit_margin
+    min_value: -1
+    max_value: 1
+    severity: low
+    description: "Profit margin outside -100% to 100% should be reviewed."
