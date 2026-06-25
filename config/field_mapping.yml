@@ -1,0 +1,259 @@
+metadata:
+  source: EODHD fundamentals demo response
+  field_audit_file: outputs\eodhd_field_audit.csv
+  notes:
+  - Generated from outputs/eodhd_field_audit.csv.
+  - Only paths found in the audit are marked as mapped.
+  - Missing fields should be reviewed before normalization.
+mapped_fields:
+  ticker:
+    raw_path: General.Code
+    candidate_paths_checked:
+    - General.Code
+    category: identity
+    required: true
+    description: Ticker symbol without exchange suffix if provided by EODHD.
+    status: mapped
+  exchange:
+    raw_path: General.Exchange
+    candidate_paths_checked:
+    - General.Exchange
+    category: identity
+    required: true
+    description: Exchange code or exchange name.
+    status: mapped
+  name:
+    raw_path: General.Name
+    candidate_paths_checked:
+    - General.Name
+    category: identity
+    required: true
+    description: Company name.
+    status: mapped
+  type:
+    raw_path: General.Type
+    candidate_paths_checked:
+    - General.Type
+    category: identity
+    required: false
+    description: Security type, such as Common Stock or ETF.
+    status: mapped
+  sector:
+    raw_path: General.Sector
+    candidate_paths_checked:
+    - General.Sector
+    category: identity
+    required: true
+    description: Company sector.
+    status: mapped
+  industry:
+    raw_path: General.Industry
+    candidate_paths_checked:
+    - General.Industry
+    category: identity
+    required: true
+    description: Company industry.
+    status: mapped
+  country:
+    raw_path: General.CountryName
+    candidate_paths_checked:
+    - General.CountryName
+    - General.CountryISO
+    category: identity
+    required: false
+    description: Company country.
+    status: mapped
+  currency:
+    raw_path: General.CurrencyCode
+    candidate_paths_checked:
+    - General.CurrencyCode
+    - General.CurrencyName
+    category: metadata
+    required: true
+    description: Reported currency.
+    status: mapped
+  market_capitalization:
+    raw_path: Highlights.MarketCapitalization
+    candidate_paths_checked:
+    - Highlights.MarketCapitalization
+    category: valuation
+    required: true
+    description: Market capitalization.
+    status: mapped
+  ebitda:
+    raw_path: Highlights.EBITDA
+    candidate_paths_checked:
+    - Highlights.EBITDA
+    category: quality
+    required: false
+    description: EBITDA.
+    status: mapped
+  pe_ratio:
+    raw_path: Highlights.PERatio
+    candidate_paths_checked:
+    - Highlights.PERatio
+    category: valuation
+    required: false
+    description: Price-to-earnings ratio.
+    status: mapped
+  peg_ratio:
+    raw_path: Highlights.PEGRatio
+    candidate_paths_checked:
+    - Highlights.PEGRatio
+    category: valuation
+    required: false
+    description: Price/earnings-to-growth ratio.
+    status: mapped
+  book_value:
+    raw_path: Highlights.BookValue
+    candidate_paths_checked:
+    - Highlights.BookValue
+    category: valuation
+    required: false
+    description: Book value per share or reported book value metric.
+    status: mapped
+  dividend_yield:
+    raw_path: Highlights.DividendYield
+    candidate_paths_checked:
+    - Highlights.DividendYield
+    category: dividends
+    required: false
+    description: Dividend yield.
+    status: mapped
+  eps:
+    raw_path: Highlights.EarningsShare
+    candidate_paths_checked:
+    - Highlights.EarningsShare
+    category: quality
+    required: false
+    description: Earnings per share.
+    status: mapped
+  revenue_ttm:
+    raw_path: Highlights.RevenueTTM
+    candidate_paths_checked:
+    - Highlights.RevenueTTM
+    category: quality
+    required: false
+    description: Trailing twelve-month revenue.
+    status: mapped
+  gross_profit_ttm:
+    raw_path: Highlights.GrossProfitTTM
+    candidate_paths_checked:
+    - Highlights.GrossProfitTTM
+    category: quality
+    required: false
+    description: Trailing twelve-month gross profit.
+    status: mapped
+  diluted_eps_ttm:
+    raw_path: Highlights.DilutedEpsTTM
+    candidate_paths_checked:
+    - Highlights.DilutedEpsTTM
+    category: quality
+    required: false
+    description: Trailing twelve-month diluted EPS.
+    status: mapped
+  quarterly_revenue_growth_yoy:
+    raw_path: Highlights.QuarterlyRevenueGrowthYOY
+    candidate_paths_checked:
+    - Highlights.QuarterlyRevenueGrowthYOY
+    category: growth
+    required: false
+    description: Year-over-year quarterly revenue growth.
+    status: mapped
+  quarterly_earnings_growth_yoy:
+    raw_path: Highlights.QuarterlyEarningsGrowthYOY
+    candidate_paths_checked:
+    - Highlights.QuarterlyEarningsGrowthYOY
+    category: growth
+    required: false
+    description: Year-over-year quarterly earnings growth.
+    status: mapped
+  profit_margin:
+    raw_path: Highlights.ProfitMargin
+    candidate_paths_checked:
+    - Highlights.ProfitMargin
+    category: quality
+    required: false
+    description: Profit margin.
+    status: mapped
+  operating_margin_ttm:
+    raw_path: Highlights.OperatingMarginTTM
+    candidate_paths_checked:
+    - Highlights.OperatingMarginTTM
+    category: quality
+    required: false
+    description: Trailing twelve-month operating margin.
+    status: mapped
+  return_on_assets_ttm:
+    raw_path: Highlights.ReturnOnAssetsTTM
+    candidate_paths_checked:
+    - Highlights.ReturnOnAssetsTTM
+    category: quality
+    required: false
+    description: Trailing twelve-month return on assets.
+    status: mapped
+  return_on_equity_ttm:
+    raw_path: Highlights.ReturnOnEquityTTM
+    candidate_paths_checked:
+    - Highlights.ReturnOnEquityTTM
+    category: quality
+    required: false
+    description: Trailing twelve-month return on equity.
+    status: mapped
+  trailing_pe:
+    raw_path: Valuation.TrailingPE
+    candidate_paths_checked:
+    - Valuation.TrailingPE
+    category: valuation
+    required: false
+    description: Trailing price-to-earnings ratio.
+    status: mapped
+  forward_pe:
+    raw_path: Valuation.ForwardPE
+    candidate_paths_checked:
+    - Valuation.ForwardPE
+    category: valuation
+    required: false
+    description: Forward price-to-earnings ratio.
+    status: mapped
+  price_sales_ttm:
+    raw_path: Valuation.PriceSalesTTM
+    candidate_paths_checked:
+    - Valuation.PriceSalesTTM
+    category: valuation
+    required: false
+    description: Price-to-sales ratio.
+    status: mapped
+  price_book_mrq:
+    raw_path: Valuation.PriceBookMRQ
+    candidate_paths_checked:
+    - Valuation.PriceBookMRQ
+    category: valuation
+    required: false
+    description: Price-to-book ratio.
+    status: mapped
+  enterprise_value:
+    raw_path: Valuation.EnterpriseValue
+    candidate_paths_checked:
+    - Valuation.EnterpriseValue
+    category: valuation
+    required: false
+    description: Enterprise value.
+    status: mapped
+  enterprise_value_revenue:
+    raw_path: Valuation.EnterpriseValueRevenue
+    candidate_paths_checked:
+    - Valuation.EnterpriseValueRevenue
+    category: valuation
+    required: false
+    description: Enterprise value to revenue.
+    status: mapped
+  enterprise_value_ebitda:
+    raw_path: Valuation.EnterpriseValueEbitda
+    candidate_paths_checked:
+    - Valuation.EnterpriseValueEbitda
+    category: valuation
+    required: false
+    description: Enterprise value to EBITDA.
+    status: mapped
+missing_fields: {}
