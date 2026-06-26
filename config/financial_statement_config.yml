@@ -1,0 +1,25 @@
+metadata:
+  purpose: "Financial statement extraction rules for EODHD fundamentals JSON."
+  input_source: "outputs/raw_samples/fundamentals_*.json"
+  line_output_file: "outputs/financial_statement_lines.csv"
+  coverage_output_file: "outputs/financial_statement_coverage.csv"
+
+statement_sections:
+  income_statement:
+    raw_path: "Financials.Income_Statement"
+    eodhd_name: "Income_Statement"
+
+  balance_sheet:
+    raw_path: "Financials.Balance_Sheet"
+    eodhd_name: "Balance_Sheet"
+
+  cash_flow:
+    raw_path: "Financials.Cash_Flow"
+    eodhd_name: "Cash_Flow"
+
+period_types:
+  - yearly
+  - quarterly
+
+metadata_fields:
+  - currency_symbol
