@@ -1,0 +1,19 @@
+ticker,company_name,sector,industry,country,currency,exchange_suffix,include_in_mvp,manual_exclusion_reason,notes
+AAPL.US,Apple Inc,Technology,Consumer Electronics,United States,USD,US,yes,,Seed test company
+MSFT.US,Microsoft Corporation,Technology,Software Infrastructure,United States,USD,US,yes,,Seed test company
+GOOGL.US,Alphabet Inc,Communication Services,Internet Content & Information,United States,USD,US,yes,,Seed test company
+JNJ.US,Johnson & Johnson,Healthcare,Drug Manufacturers General,United States,USD,US,yes,,Seed test company
+PFE.US,Pfizer Inc,Healthcare,Drug Manufacturers General,United States,USD,US,yes,,Seed test company
+PG.US,Procter & Gamble Co,Consumer Staples,Household & Personal Products,United States,USD,US,yes,,Seed test company
+CL.US,Colgate-Palmolive Company,Consumer Staples,Household & Personal Products,United States,USD,US,yes,,Seed test company
+ADP.US,Automatic Data Processing Inc,Industrials,Staffing & Employment Services,United States,USD,US,yes,,Seed test company
+ACN.US,Accenture plc,Technology,Information Technology Services,United States,USD,US,yes,,Seed test company
+INTU.US,Intuit Inc,Technology,Software Application,United States,USD,US,yes,,Seed test company
+ORCL.US,Oracle Corporation,Technology,Software Infrastructure,United States,USD,US,yes,,Seed test company
+CSCO.US,Cisco Systems Inc,Technology,Communication Equipment,United States,USD,US,yes,,Seed test company
+HD.US,Home Depot Inc,Consumer Discretionary,Home Improvement Retail,United States,USD,US,yes,,Seed test company
+LOW.US,Lowe's Companies Inc,Consumer Discretionary,Home Improvement Retail,United States,USD,US,yes,,Seed test company
+NKE.US,Nike Inc,Consumer Discretionary,Footwear & Accessories,United States,USD,US,yes,,Seed test company
+WM.US,Waste Management Inc,Industrials,Waste Management,United States,USD,US,yes,,Seed test company
+NEE.US,NextEra Energy Inc,Utilities,Regulated Electric,United States,USD,US,yes,,Seed test company
+UNH.US,UnitedHealth Group Inc,Healthcare,Healthcare Plans,United States,USD,US,yes,,Seed test company

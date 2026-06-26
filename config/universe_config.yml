@@ -1,0 +1,61 @@
+metadata:
+  purpose: "Universe construction rules for EODHD value-investing project."
+  input_file: "data/universe_seed.csv"
+  output_file: "outputs/universe_master.csv"
+
+allowed_exchange_suffixes:
+  - US
+
+required_columns:
+  - ticker
+  - company_name
+  - sector
+  - industry
+  - country
+  - currency
+  - exchange_suffix
+  - include_in_mvp
+
+excluded_categories:
+  fossil_fuels:
+    keywords:
+      - oil
+      - gas
+      - coal
+      - drilling
+      - exploration
+      - petroleum
+      - pipeline
+  defense:
+    keywords:
+      - aerospace defense
+      - defense
+      - weapons
+      - military
+  tobacco:
+    keywords:
+      - tobacco
+      - cigarettes
+  alcohol:
+    keywords:
+      - alcohol
+      - beer
+      - wine
+      - spirits
+  gambling:
+    keywords:
+      - casino
+      - gaming
+      - betting
+      - wagering
+  high_sugar_or_fat_consumer_products:
+    keywords:
+      - soft drinks
+      - confectioners
+      - packaged foods
+      - restaurants
+      - fast food
+
+default_flags:
+  is_seed_universe: true
+  data_source: "manual_seed"
