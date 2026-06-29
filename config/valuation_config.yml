@@ -1,0 +1,250 @@
+metadata:
+  purpose: "Conservative first-pass valuation configuration for value-investing project."
+  version: "0.1"
+  input_files:
+    normalized_metrics: "outputs/normalized_metrics.csv"
+    financial_statement_summary: "outputs/financial_statement_summary.csv"
+    all_scored_stocks: "outputs/all_scored_stocks.csv"
+    data_quality_report: "outputs/data_quality_report.csv"
+    financial_statement_quality_report: "outputs/financial_statement_quality_report.csv"
+  output_file: "outputs/valuation_outputs.csv"
+  notes:
+    - "This is an MVP valuation configuration, not investment advice."
+    - "Valuation uses conservative ranges rather than single target prices."
+    - "Initial valuation is market-cap based because current share price and share-count workflows are not fully built yet."
+    - "Later versions can add per-share fair value after reliable latest price and shares outstanding are integrated."
+
+valuation_model:
+  valuation_unit: "market_cap_based"
+  base_currency_policy: "use_reported_currency"
+  total_value_basis: "estimated_equity_value_or_business_value"
+  output_style: "range"
+  margin_of_safety_basis: "market_capitalization"
+
+required_fields:
+  critical:
+    - source_symbol
+    - ticker
+    - name
+    - sector
+    - market_capitalization
+
+  preferred:
+    - latest_revenue
+    - latest_net_income
+    - latest_free_cash_flow
+    - latest_net_margin
+    - latest_fcf_margin
+    - revenue_growth_yoy
+    - net_income_growth_yoy
+    - latest_liabilities_to_assets
+    - pe_ratio
+    - trailing_pe
+    - enterprise_value_ebitda
+    - price_sales_ttm
+    - price_book_mrq
+
+data_quality_policy:
+  reject_if_missing_critical_fields: true
+  reject_if_market_cap_missing_or_nonpositive: true
+  flag_if_financial_statement_quality_high_failure: true
+  flag_if_data_quality_high_failure: true
+  flag_if_low_score_confidence: true
+  minimum_score_confidence_for_high_confidence_valuation: "medium"
+
+valuation_methods:
+  earnings_power_value:
+    enabled: true
+    description: "Estimate equity value from latest annual net income using conservative P/E-style multiples."
+    input_field: latest_net_income
+    denominator_field: market_capitalization
+    value_type: equity_value
+    multiples:
+      low: 10
+      base: 15
+      high: 20
+    weight: 0.35
+    rules:
+      reject_method_if_input_missing: true
+      reject_method_if_input_nonpositive: true
+      flag_if_net_income_declining: true
+    notes:
+      - "Simple first-pass earnings power estimate."
+      - "Can be misleading for cyclicals, banks, insurers, REITs, and one-time earnings years."
+
+  free_cash_flow_value:
+    enabled: true
+    description: "Estimate equity value from latest annual free cash flow using conservative FCF multiples."
+    input_field: latest_free_cash_flow
+    denominator_field: market_capitalization
+    value_type: equity_value
+    multiples:
+      low: 12
+      base: 16
+      high: 20
+    weight: 0.45
+    rules:
+      reject_method_if_input_missing: true
+      reject_method_if_input_nonpositive: true
+      flag_if_fcf_source_missing: true
+      flag_if_fcf_margin_negative: true
+    notes:
+      - "Preferred method for mature companies with stable cash generation."
+      - "Reported FCF is preferred; computed FCF is acceptable but should be flagged."
+
+  sales_multiple_value:
+    enabled: true
+    description: "Estimate business value from latest annual revenue using conservative sales multiples."
+    input_field: latest_revenue
+    denominator_field: market_capitalization
+    value_type: business_value_proxy
+    multiples:
+      low: 1
+      base: 2
+      high: 3
+    weight: 0.20
+    rules:
+      reject_method_if_input_missing: true
+      reject_method_if_input_nonpositive: true
+      flag_if_net_margin_low: true
+    notes:
+      - "Low-confidence backup method."
+      - "Useful only when margins and business quality are reasonable."
+      - "Highly sector-sensitive."
+
+method_combination_policy:
+  enabled: true
+  combine_available_methods_only: true
+  minimum_methods_for_base_valuation: 2
+  fallback_to_single_method_allowed: true
+  single_method_confidence: "low"
+  weighted_average_fields:
+    low: conservative_value_low
+    base: conservative_value_base
+    high: conservative_value_high
+
+margin_of_safety:
+  formula: "(estimated_value - market_capitalization) / market_capitalization"
+  thresholds:
+    strong_discount: 0.30
+    moderate_discount: 0.15
+    fairly_valued_lower: -0.10
+    fairly_valued_upper: 0.10
+    expensive: -0.10
+  labels:
+    strong_discount: "potentially_undervalued"
+    moderate_discount: "watchlist_discount"
+    fair: "roughly_fair_value"
+    expensive: "potentially_overvalued"
+
+valuation_confidence_rules:
+  high:
+    requirements:
+      - "at_least_two_methods_available"
+      - "no_high_severity_quality_failures"
+      - "score_confidence_high_or_medium"
+      - "positive_net_income"
+      - "positive_free_cash_flow"
+
+  medium:
+    requirements:
+      - "at_least_one_core_method_available"
+      - "no_critical_missing_fields"
+      - "market_cap_positive"
+
+  low:
+    triggers:
+      - "only_one_method_available"
+      - "missing_free_cash_flow"
+      - "missing_net_income"
+      - "low_score_confidence"
+      - "high_financial_statement_quality_flags"
+      - "sector_requires_special_handling"
+
+sector_rules:
+  financials:
+    matching_keywords:
+      - financial
+      - bank
+      - insurance
+      - capital markets
+      - asset management
+    valuation_status: "special_handling_required"
+    disabled_methods:
+      - enterprise_value_ebitda
+      - sales_multiple_value
+      - free_cash_flow_value
+    notes:
+      - "Banks and insurers need separate capital, book value, reserve, and regulatory analysis."
+
+  real_estate:
+    matching_keywords:
+      - real estate
+      - reit
+    valuation_status: "special_handling_required"
+    disabled_methods:
+      - earnings_power_value
+      - free_cash_flow_value
+    notes:
+      - "REITs should use FFO/AFFO rather than ordinary earnings."
+
+  utilities:
+    matching_keywords:
+      - utilities
+      - regulated electric
+      - regulated gas
+      - regulated water
+    valuation_status: "allow_with_caution"
+    caution_methods:
+      - latest_liabilities_to_assets
+      - revenue_growth_yoy
+    notes:
+      - "Utilities often carry higher leverage and slower growth; compare within sector."
+
+  cyclicals:
+    matching_keywords:
+      - autos
+      - steel
+      - chemicals
+      - airlines
+      - shipping
+      - construction
+      - semiconductors
+    valuation_status: "allow_with_caution"
+    caution_methods:
+      - earnings_power_value
+      - free_cash_flow_value
+    notes:
+      - "Cyclical earnings can overstate value near cycle peaks and understate value near troughs."
+
+output_columns:
+  - source_symbol
+  - ticker
+  - name
+  - sector
+  - industry
+  - market_capitalization
+  - final_score
+  - score_confidence
+  - valuation_status
+  - valuation_confidence
+  - earnings_value_low
+  - earnings_value_base
+  - earnings_value_high
+  - fcf_value_low
+  - fcf_value_base
+  - fcf_value_high
+  - sales_value_low
+  - sales_value_base
+  - sales_value_high
+  - conservative_value_low
+  - conservative_value_base
+  - conservative_value_high
+  - margin_of_safety_low
+  - margin_of_safety_base
+  - margin_of_safety_high
+  - margin_of_safety_label
+  - methods_available
+  - methods_missing
+  - valuation_flags
+  - valuation_notes
