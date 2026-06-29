@@ -1,0 +1,90 @@
+metadata:
+  purpose: "Data-quality rules for extracted financial statement lines."
+  line_input_file: "outputs/financial_statement_lines.csv"
+  coverage_input_file: "outputs/financial_statement_coverage.csv"
+  output_file: "outputs/financial_statement_quality_report.csv"
+
+required_coverage:
+  - statement_type: income_statement
+    period_type: yearly
+    min_periods: 3
+    severity: high
+    description: "At least 3 annual income statement periods are needed for basic trend analysis."
+
+  - statement_type: balance_sheet
+    period_type: yearly
+    min_periods: 3
+    severity: high
+    description: "At least 3 annual balance sheet periods are needed for basic balance sheet analysis."
+
+  - statement_type: cash_flow
+    period_type: yearly
+    min_periods: 3
+    severity: high
+    description: "At least 3 annual cash flow periods are needed for basic cash flow analysis."
+
+  - statement_type: income_statement
+    period_type: quarterly
+    min_periods: 4
+    severity: medium
+    description: "At least 4 quarterly income statement periods are useful for recent trend checks."
+
+  - statement_type: balance_sheet
+    period_type: quarterly
+    min_periods: 4
+    severity: medium
+    description: "At least 4 quarterly balance sheet periods are useful for recent balance sheet checks."
+
+  - statement_type: cash_flow
+    period_type: quarterly
+    min_periods: 4
+    severity: medium
+    description: "At least 4 quarterly cash flow periods are useful for recent cash flow checks."
+
+required_line_items:
+  - statement_type: income_statement
+    period_type: yearly
+    line_item: totalRevenue
+    severity: high
+    description: "Annual revenue is required for growth and margin analysis."
+
+  - statement_type: income_statement
+    period_type: yearly
+    line_item: netIncome
+    severity: high
+    description: "Annual net income is required for profitability analysis."
+
+  - statement_type: balance_sheet
+    period_type: yearly
+    line_item: totalAssets
+    severity: high
+    description: "Annual total assets are required for balance sheet analysis."
+
+  - statement_type: balance_sheet
+    period_type: yearly
+    line_item: totalLiab
+    severity: high
+    description: "Annual total liabilities are required for leverage analysis."
+
+  - statement_type: cash_flow
+    period_type: yearly
+    line_item: totalCashFromOperatingActivities
+    severity: high
+    description: "Annual operating cash flow is required for cash generation analysis."
+
+  - statement_type: cash_flow
+    period_type: yearly
+    line_item: capitalExpenditures
+    severity: medium
+    description: "Annual capital expenditures are needed to estimate free cash flow if freeCashFlow is unavailable."
+
+  - statement_type: cash_flow
+    period_type: yearly
+    line_item: freeCashFlow
+    severity: low
+    description: "Reported free cash flow is useful, but it can be computed if operating cash flow and capex are available."
+
+allowed_non_numeric_line_items:
+  - date
+  - filing_date
+  - currency_symbol
