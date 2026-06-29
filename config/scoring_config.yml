@@ -1,0 +1,318 @@
+metadata:
+  purpose: "Transparent first-pass 100-point value-investing scoring model."
+  version: "0.1"
+  input_files:
+    normalized_metrics: "outputs/normalized_metrics.csv"
+    financial_statement_summary: "outputs/financial_statement_summary.csv"
+    data_quality_report: "outputs/data_quality_report.csv"
+    financial_statement_quality_report: "outputs/financial_statement_quality_report.csv"
+  output_file: "outputs/all_scored_stocks.csv"
+  notes:
+    - "This is an MVP scoring configuration, not investment advice."
+    - "Scores are transparent and rule-based, not machine learning."
+    - "Missing or low-quality data should reduce confidence before ranking."
+    - "Sector-specific scoring rules will be added later."
+
+score_model:
+  total_points: 100
+
+  categories:
+    value:
+      weight: 35
+      description: "Measures whether the stock looks inexpensive relative to earnings, sales, book value, enterprise value, and dividends."
+      metrics:
+        - name: pe_ratio
+          field: pe_ratio
+          fallback_fields:
+            - trailing_pe
+          points: 10
+          direction: lower_is_better
+          missing_action: neutral
+          thresholds:
+            excellent: 10
+            good: 15
+            fair: 25
+            weak: 40
+            poor: 60
+          notes: "Negative or extremely high PE should be flagged by data quality checks."
+
+        - name: price_sales_ttm
+          field: price_sales_ttm
+          points: 6
+          direction: lower_is_better
+          missing_action: neutral
+          thresholds:
+            excellent: 1
+            good: 2
+            fair: 4
+            weak: 8
+            poor: 12
+          notes: "Useful for companies with temporarily depressed earnings, but sector-sensitive."
+
+        - name: price_book_mrq
+          field: price_book_mrq
+          points: 6
+          direction: lower_is_better
+          missing_action: neutral
+          thresholds:
+            excellent: 1
+            good: 2
+            fair: 4
+            weak: 8
+            poor: 12
+          notes: "Can be misleading for asset-light companies and invalid for negative equity."
+
+        - name: enterprise_value_ebitda
+          field: enterprise_value_ebitda
+          points: 8
+          direction: lower_is_better
+          missing_action: neutral
+          thresholds:
+            excellent: 6
+            good: 10
+            fair: 14
+            weak: 20
+            poor: 30
+          notes: "Not appropriate for banks, insurers, and some financial companies."
+
+        - name: dividend_yield
+          field: dividend_yield
+          points: 5
+          direction: higher_is_better
+          missing_action: neutral
+          thresholds:
+            excellent: 0.05
+            good: 0.035
+            fair: 0.02
+            weak: 0.01
+            poor: 0
+          notes: "Very high yields may indicate distress and should be flagged."
+
+    growth:
+      weight: 20
+      description: "Measures recent growth using financial statement trends and available summary growth fields."
+      metrics:
+        - name: revenue_growth_yoy
+          field: revenue_growth_yoy
+          points: 8
+          direction: higher_is_better
+          missing_action: neutral
+          thresholds:
+            excellent: 0.15
+            good: 0.08
+            fair: 0.03
+            weak: 0
+            poor: -0.05
+          notes: "Uses latest annual revenue versus prior annual revenue."
+
+        - name: net_income_growth_yoy
+          field: net_income_growth_yoy
+          points: 7
+          direction: higher_is_better
+          missing_action: neutral
+          thresholds:
+            excellent: 0.15
+            good: 0.08
+            fair: 0.03
+            weak: 0
+            poor: -0.10
+          notes: "Can be noisy for cyclical or restructuring companies."
+
+        - name: quarterly_revenue_growth_yoy
+          field: quarterly_revenue_growth_yoy
+          points: 5
+          direction: higher_is_better
+          missing_action: neutral
+          thresholds:
+            excellent: 0.15
+            good: 0.08
+            fair: 0.03
+            weak: 0
+            poor: -0.05
+          notes: "Uses EODHD summary field when available."
+
+    quality:
+      weight: 35
+      description: "Measures profitability, cash generation, balance sheet quality, and operating efficiency."
+      metrics:
+        - name: latest_net_margin
+          field: latest_net_margin
+          points: 8
+          direction: higher_is_better
+          missing_action: neutral
+          thresholds:
+            excellent: 0.20
+            good: 0.12
+            fair: 0.07
+            weak: 0.03
+            poor: 0
+          notes: "Computed from annual financial statements."
+
+        - name: latest_fcf_margin
+          field: latest_fcf_margin
+          points: 8
+          direction: higher_is_better
+          missing_action: neutral
+          thresholds:
+            excellent: 0.18
+            good: 0.10
+            fair: 0.05
+            weak: 0
+            poor: -0.05
+          notes: "Uses reported FCF when available, otherwise operating cash flow plus capex."
+
+        - name: return_on_equity_ttm
+          field: return_on_equity_ttm
+          points: 7
+          direction: higher_is_better
+          missing_action: neutral
+          thresholds:
+            excellent: 0.25
+            good: 0.15
+            fair: 0.10
+            weak: 0.05
+            poor: 0
+          notes: "Can be distorted by leverage, buybacks, or negative equity."
+
+        - name: return_on_assets_ttm
+          field: return_on_assets_ttm
+          points: 5
+          direction: higher_is_better
+          missing_action: neutral
+          thresholds:
+            excellent: 0.10
+            good: 0.06
+            fair: 0.03
+            weak: 0.01
+            poor: 0
+          notes: "Useful cross-check against ROE."
+
+        - name: latest_liabilities_to_assets
+          field: latest_liabilities_to_assets
+          points: 7
+          direction: lower_is_better
+          missing_action: neutral
+          thresholds:
+            excellent: 0.30
+            good: 0.45
+            fair: 0.60
+            weak: 0.75
+            poor: 0.90
+          notes: "Simple first-pass leverage proxy. Sector-specific rules needed later."
+
+    stability:
+      weight: 10
+      description: "Measures basic data stability and financial-statement coverage before trusting a score."
+      metrics:
+        - name: yearly_periods_available
+          field: yearly_periods_available
+          points: 5
+          direction: higher_is_better
+          missing_action: zero
+          thresholds:
+            excellent: 5
+            good: 4
+            fair: 3
+            weak: 2
+            poor: 1
+          notes: "More annual periods improve confidence."
+
+        - name: beta
+          field: beta
+          fallback_fields:
+            - technicals_beta
+          points: 5
+          direction: target_range
+          missing_action: neutral
+          target_range:
+            min: 0.6
+            max: 1.3
+          thresholds:
+            excellent: 1.0
+            good: 1.3
+            fair: 1.6
+            weak: 2.0
+            poor: 2.5
+          notes: "If beta is not mapped yet, this will be neutral until added."
+
+missing_value_policy:
+  neutral_score_fraction: 0.50
+  zero_score_fraction: 0.00
+  critical_missing_fields:
+    - source_symbol
+    - ticker
+    - name
+    - sector
+    - market_capitalization
+  notes:
+    - "Neutral means the metric receives 50% of its available points."
+    - "Critical missing fields should prevent a stock from being ranked."
+
+quality_penalties:
+  enabled: true
+  rules:
+    - name: high_severity_data_quality_failure
+      source_report: "outputs/data_quality_report.csv"
+      severity: high
+      status_values:
+        - fail
+      point_penalty: 10
+      max_penalty: 20
+
+    - name: high_severity_financial_statement_failure
+      source_report: "outputs/financial_statement_quality_report.csv"
+      severity: high
+      status_values:
+        - fail
+      point_penalty: 10
+      max_penalty: 20
+
+    - name: medium_quality_flags
+      source_reports:
+        - "outputs/data_quality_report.csv"
+        - "outputs/financial_statement_quality_report.csv"
+      severity: medium
+      status_values:
+        - flag
+      point_penalty: 3
+      max_penalty: 12
+
+sector_cautions:
+  financials:
+    affected_metrics:
+      - enterprise_value_ebitda
+      - price_book_mrq
+      - latest_liabilities_to_assets
+    notes: "Banks and insurers need separate balance-sheet and capital rules."
+
+  utilities:
+    affected_metrics:
+      - latest_liabilities_to_assets
+      - revenue_growth_yoy
+    notes: "Utilities often carry higher leverage and slower growth."
+
+  real_estate:
+    affected_metrics:
+      - pe_ratio
+      - latest_net_margin
+      - return_on_equity_ttm
+    notes: "REITs should use FFO/AFFO metrics later."
+
+outputs:
+  scored_columns:
+    - source_symbol
+    - ticker
+    - name
+    - sector
+    - industry
+    - total_score
+    - value_score
+    - growth_score
+    - quality_score
+    - stability_score
+    - quality_penalty
+    - final_score
+    - score_confidence
+    - missing_metric_count
+    - data_quality_flag_count
+    - scoring_notes
