@@ -1,0 +1,117 @@
+metadata:
+  purpose: "Endpoint and access audit for EODHD value-investing project."
+  output_file: "outputs/api_access_report.csv"
+  notes:
+    - "Do not commit API tokens."
+    - "This file defines low-cost endpoint tests."
+    - "Bulk endpoints are disabled by default because they can consume more API calls."
+
+defaults:
+  base_url: "https://eodhd.com"
+  symbol: "AAPL.US"
+  exchange: "US"
+  timeout_seconds: 30
+
+endpoints:
+  - name: user_account
+    enabled: true
+    token_source: api_token
+    path: "/api/user"
+    params:
+      fmt: "json"
+
+  - name: eod_prices
+    enabled: true
+    token_source: api_token
+    path: "/api/eod/AAPL.US"
+    params:
+      fmt: "json"
+      from: "2024-01-02"
+      to: "2024-01-05"
+
+  - name: fundamentals_legacy_demo_general
+    enabled: true
+    token_source: fundamentals_token
+    path: "/api/fundamentals/AAPL.US"
+    params:
+      fmt: "json"
+      filter: "General"
+
+  - name: fundamentals_v1_1_demo_general
+    enabled: true
+    token_source: fundamentals_token
+    path: "/api/v1.1/fundamentals/AAPL.US"
+    params:
+      fmt: "json"
+      filter: "General"
+
+  - name: fundamentals_legacy_personal_general
+    enabled: true
+    token_source: api_token
+    path: "/api/fundamentals/AAPL.US"
+    params:
+      fmt: "json"
+      filter: "General"
+
+  - name: fundamentals_v1_1_personal_general
+    enabled: true
+    token_source: api_token
+    path: "/api/v1.1/fundamentals/AAPL.US"
+    params:
+      fmt: "json"
+      filter: "General"
+
+  - name: dividends
+    enabled: true
+    token_source: api_token
+    path: "/api/div/AAPL.US"
+    params:
+      fmt: "json"
+      from: "2024-01-01"
+
+  - name: splits
+    enabled: true
+    token_source: api_token
+    path: "/api/splits/AAPL.US"
+    params:
+      fmt: "json"
+      from: "2020-01-01"
+
+  - name: earnings_calendar
+    enabled: true
+    token_source: api_token
+    path: "/api/calendar/earnings"
+    params:
+      fmt: "json"
+      symbols: "AAPL.US"
+
+  - name: news
+    enabled: true
+    token_source: api_token
+    path: "/api/news"
+    params:
+      fmt: "json"
+      s: "AAPL.US"
+      limit: 1
+
+  - name: exchanges_list
+    enabled: true
+    token_source: api_token
+    path: "/api/exchanges-list/"
+    params:
+      fmt: "json"
+
+  - name: exchange_symbol_list_us_common_stock
+    enabled: true
+    token_source: api_token
+    path: "/api/exchange-symbol-list/US"
+    params:
+      fmt: "json"
+      type: "common_stock"
+
+  - name: bulk_eod_last_day_us
+    enabled: false
+    token_source: api_token
+    path: "/api/eod-bulk-last-day/US"
+    params:
+      fmt: "json"
