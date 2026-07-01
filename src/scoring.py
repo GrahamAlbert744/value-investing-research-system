@@ -1,15 +1,11 @@
 """
-Transparent rule-based scoring functions for the value-investing project.
+Transparent rule-based scoring functions.
 
-This module converts normalized company metrics and financial-statement summaries
-into a 100-point score based on config/scoring_config.yml.
-
-The model is intentionally:
-- transparent
-- configurable
-- rule-based
-- conservative with missing values
-- not machine learning
+C6 scoring policy:
+- Missing metrics receive no score.
+- Category scores are reweighted only when category coverage >= configured threshold.
+- Low-coverage categories are not reweighted.
+- Score confidence is based on overall coverage, category coverage, summary flags, and sector caveats.
 """
 
 from __future__ import annotations
@@ -53,7 +49,7 @@ def is_missing(value: Any) -> bool:
 
 
 def safe_float(value: Any) -> float | None:
-    """Convert a value to float when possible."""
+    """Convert value to float when possible."""
     if is_missing(value):
         return None
 
@@ -63,14 +59,11 @@ def safe_float(value: Any) -> float | None:
         return None
 
 
-def get_metric_value(row: pd.Series, metric_spec: dict[str, Any]) -> tuple[float | None, str | None]:
-    """
-    Get metric value from the primary field or fallback fields.
-
-    Returns:
-    - numeric value or None
-    - field actually used or None
-    """
+def get_metric_value(
+    row: pd.Series,
+    metric_spec: dict[str, Any],
+) -> tuple[float | None, str | None]:
+    """Get metric value from primary field or fallback fields."""
     candidate_fields = [metric_spec["field"]] + metric_spec.get("fallback_fields", [])
 
     for field in candidate_fields:
@@ -87,21 +80,19 @@ def missing_metric_score(
     missing_action: str,
     scoring_config: dict[str, Any],
 ) -> float:
-    """Return score for missing metric based on configured policy."""
-    policy = scoring_config.get("missing_value_policy", {})
-    neutral_fraction = float(policy.get("neutral_score_fraction", 0.5))
-    zero_fraction = float(policy.get("zero_score_fraction", 0.0))
+    """
+    Backward-compatible helper.
 
-    if missing_action == "zero":
-        return metric_points * zero_fraction
-
-    if missing_action == "neutral":
-        return metric_points * neutral_fraction
-
-    return metric_points * neutral_fraction
+    C6 policy: missing metrics receive zero direct score.
+    """
+    return 0.0
 
 
-def score_lower_is_better(value: float, points: float, thresholds: dict[str, Any]) -> float:
+def score_lower_is_better(
+    value: float,
+    points: float,
+    thresholds: dict[str, Any],
+) -> float:
     """Score a metric where lower values are better."""
     if value <= float(thresholds["excellent"]):
         return points
@@ -116,7 +107,11 @@ def score_lower_is_better(value: float, points: float, thresholds: dict[str, Any
     return 0.0
 
 
-def score_higher_is_better(value: float, points: float, thresholds: dict[str, Any]) -> float:
+def score_higher_is_better(
+    value: float,
+    points: float,
+    thresholds: dict[str, Any],
+) -> float:
     """Score a metric where higher values are better."""
     if value >= float(thresholds["excellent"]):
         return points
@@ -131,17 +126,15 @@ def score_higher_is_better(value: float, points: float, thresholds: dict[str, An
     return 0.0
 
 
-def score_target_range(value: float, points: float, metric_spec: dict[str, Any]) -> float:
-    """
-    Score a metric where a middle range is preferred.
-
-    Used first for beta:
-    - full points inside target range
-    - partial points as value moves outside the range
-    """
+def score_target_range(
+    value: float,
+    points: float,
+    metric_spec: dict[str, Any],
+) -> float:
+    """Score a metric where a middle range is preferred."""
     target_range = metric_spec.get("target_range", {})
-    min_value = float(target_range.get("min"))
-    max_value = float(target_range.get("max"))
+    min_value = float(target_range["min"])
+    max_value = float(target_range["max"])
 
     if min_value <= value <= max_value:
         return points
@@ -151,12 +144,13 @@ def score_target_range(value: float, points: float, metric_spec: dict[str, Any])
 
     if value < min_value:
         distance = min_value - value
-        denominator = max(min_value, 1)
+        denominator = max(min_value, 1.0)
     else:
         distance = value - max_value
-        denominator = max(poor - max_value, 1)
+        denominator = max(poor - max_value, 1.0)
 
     penalty_fraction = min(distance / denominator, 1.0)
+
     return points * (1.0 - penalty_fraction)
 
 
@@ -169,57 +163,70 @@ def score_metric(
     metric_name = metric_spec["name"]
     points = float(metric_spec["points"])
     direction = metric_spec["direction"]
-    missing_action = metric_spec.get("missing_action", "neutral")
 
     value, field_used = get_metric_value(row=row, metric_spec=metric_spec)
 
     if value is None:
-        score = missing_metric_score(
-            metric_points=points,
-            missing_action=missing_action,
-            scoring_config=scoring_config,
-        )
-
         return {
             "metric_name": metric_name,
-            "field_used": field_used,
+            "field_used": None,
             "metric_value": None,
             "metric_points": points,
-            "metric_score": score,
+            "metric_score": 0.0,
             "metric_status": "missing",
-            "metric_note": f"Missing metric; used {missing_action} policy.",
+            "metric_note": "missing_no_credit",
+            "scorable_points": 0.0,
         }
 
     if direction == "lower_is_better":
-        score = score_lower_is_better(
+        metric_score = score_lower_is_better(
             value=value,
             points=points,
             thresholds=metric_spec["thresholds"],
         )
     elif direction == "higher_is_better":
-        score = score_higher_is_better(
+        metric_score = score_higher_is_better(
             value=value,
             points=points,
             thresholds=metric_spec["thresholds"],
         )
     elif direction == "target_range":
-        score = score_target_range(
+        metric_score = score_target_range(
             value=value,
             points=points,
             metric_spec=metric_spec,
         )
     else:
-        raise ValueError(f"Unsupported scoring direction: {direction}")
+        raise ValueError(f"Unsupported metric direction: {direction}")
 
     return {
         "metric_name": metric_name,
         "field_used": field_used,
         "metric_value": value,
         "metric_points": points,
-        "metric_score": score,
+        "metric_score": round(metric_score, 4),
         "metric_status": "scored",
         "metric_note": "",
+        "scorable_points": points,
     }
+
+
+def get_category_reweight_threshold(scoring_config: dict[str, Any]) -> float:
+    """Return minimum coverage required before category reweighting."""
+    policy = scoring_config.get("score_model", {}).get(
+        "category_scoring_policy",
+        {},
+    )
+
+    return float(
+        policy.get(
+            "min_category_coverage_for_reweight",
+            scoring_config.get("missing_value_policy", {}).get(
+                "min_category_coverage_for_reweight",
+                0.60,
+            ),
+        )
+    )
 
 
 def score_category(
@@ -228,98 +235,247 @@ def score_category(
     category_spec: dict[str, Any],
     scoring_config: dict[str, Any],
 ) -> dict[str, Any]:
-    """Score one category such as value, growth, quality, or stability."""
-    metric_results = []
+    """Score one category using C6 coverage-based reweighting."""
+    category_weight = float(category_spec["weight"])
+    metrics = category_spec.get("metrics", [])
 
-    for metric_spec in category_spec.get("metrics", []):
-        result = score_metric(
+    metric_results = [
+        score_metric(
             row=row,
             metric_spec=metric_spec,
             scoring_config=scoring_config,
         )
-        result["category"] = category_name
-        metric_results.append(result)
+        for metric_spec in metrics
+    ]
 
-    category_score = sum(result["metric_score"] for result in metric_results)
-    category_points = sum(result["metric_points"] for result in metric_results)
-    missing_count = sum(result["metric_status"] == "missing" for result in metric_results)
+    raw_score = sum(float(result["metric_score"]) for result in metric_results)
+    scorable_points = sum(float(result["scorable_points"]) for result in metric_results)
+    possible_points = sum(float(result["metric_points"]) for result in metric_results)
+
+    if possible_points <= 0:
+        coverage = 0.0
+    else:
+        coverage = scorable_points / possible_points
+
+    reweight_threshold = get_category_reweight_threshold(scoring_config)
+
+    if coverage >= reweight_threshold and scorable_points > 0:
+        category_score = (raw_score / scorable_points) * category_weight
+        category_reweighted = True
+        category_note = "reweighted_observed_metrics"
+    else:
+        category_score = raw_score
+        category_reweighted = False
+        category_note = "not_reweighted_low_coverage"
+
+    if coverage >= 0.85:
+        category_confidence = "high"
+    elif coverage >= reweight_threshold:
+        category_confidence = "medium"
+    else:
+        category_confidence = "low"
+
+    missing_metrics = [
+        result["metric_name"]
+        for result in metric_results
+        if result["metric_status"] == "missing"
+    ]
 
     return {
-        "category": category_name,
-        "category_score": category_score,
-        "category_points": category_points,
-        "missing_metric_count": missing_count,
+        "category_name": category_name,
+        "category_weight": category_weight,
+        "category_score": round(category_score, 4),
+        "category_raw_score": round(raw_score, 4),
+        "category_possible_points": round(possible_points, 4),
+        "category_scorable_points": round(scorable_points, 4),
+        "category_coverage": round(coverage, 4),
+        "category_reweighted": category_reweighted,
+        "category_confidence": category_confidence,
+        "category_note": category_note,
+        "missing_metrics": missing_metrics,
         "metric_results": metric_results,
     }
 
 
-def score_one_company(row: pd.Series, scoring_config: dict[str, Any]) -> dict[str, Any]:
+def get_sector_special_handling(
+    row: pd.Series,
+    scoring_config: dict[str, Any],
+) -> tuple[str, str, str]:
+    """Return sector confidence cap, rule name, and reason."""
+    sector_text = " ".join(
+        str(row.get(column, ""))
+        for column in ["sector", "industry"]
+    ).lower()
+
+    rules = scoring_config.get("sector_special_handling", {})
+
+    for rule_name, rule in rules.items():
+        for keyword in rule.get("matching_keywords", []):
+            if str(keyword).lower() in sector_text:
+                return (
+                    str(rule.get("confidence_cap", "")),
+                    rule_name,
+                    str(rule.get("reason", "")),
+                )
+
+    return "", "", ""
+
+
+def apply_confidence_cap(confidence: str, cap: str) -> str:
+    """Cap confidence at medium or low."""
+    confidence_order = {
+        "low": 0,
+        "medium": 1,
+        "high": 2,
+    }
+
+    if not cap:
+        return confidence
+
+    if cap not in confidence_order or confidence not in confidence_order:
+        return confidence
+
+    if confidence_order[confidence] > confidence_order[cap]:
+        return cap
+
+    return confidence
+
+
+def determine_score_confidence(
+    category_results: list[dict[str, Any]],
+    score_data_coverage: float,
+    row: pd.Series,
+    scoring_config: dict[str, Any],
+) -> tuple[str, list[str]]:
+    """Determine score confidence and confidence notes."""
+    policy = scoring_config.get("score_model", {}).get("score_confidence_policy", {})
+
+    high_threshold = float(policy.get("high_overall_coverage", 0.85))
+    medium_threshold = float(policy.get("medium_overall_coverage", 0.70))
+    category_cap_threshold = float(policy.get("cap_to_medium_if_any_category_below", 0.60))
+
+    notes: list[str] = []
+
+    if score_data_coverage >= high_threshold:
+        confidence = "high"
+    elif score_data_coverage >= medium_threshold:
+        confidence = "medium"
+    else:
+        confidence = "low"
+
+    low_categories = [
+        result["category_name"]
+        for result in category_results
+        if float(result["category_coverage"]) < category_cap_threshold
+    ]
+
+    if low_categories:
+        confidence = apply_confidence_cap(confidence, "medium")
+        notes.append("category_coverage_below_threshold:" + ",".join(low_categories))
+
+    sector_cap, sector_rule, sector_reason = get_sector_special_handling(
+        row=row,
+        scoring_config=scoring_config,
+    )
+
+    if sector_cap and policy.get("cap_to_low_if_sector_special_handling", True):
+        confidence = apply_confidence_cap(confidence, sector_cap)
+        notes.append(f"sector_special_handling:{sector_rule}")
+        if sector_reason:
+            notes.append(sector_reason)
+
+    summary_quality_flags = row.get("summary_quality_flags")
+    if (
+        policy.get("cap_to_low_if_summary_quality_flags_present", True)
+        and not is_missing(summary_quality_flags)
+        and str(summary_quality_flags).strip() != ""
+    ):
+        confidence = apply_confidence_cap(confidence, "low")
+        notes.append("summary_quality_flags_present")
+
+    return confidence, notes
+
+
+def score_one_company(
+    row: pd.Series,
+    scoring_config: dict[str, Any],
+) -> dict[str, Any]:
     """Score one company row."""
     categories = scoring_config["score_model"]["categories"]
 
-    category_results = {}
-
-    for category_name, category_spec in categories.items():
-        category_results[category_name] = score_category(
+    category_results = [
+        score_category(
             row=row,
             category_name=category_name,
             category_spec=category_spec,
             scoring_config=scoring_config,
         )
+        for category_name, category_spec in categories.items()
+    ]
 
-    value_score = category_results["value"]["category_score"]
-    growth_score = category_results["growth"]["category_score"]
-    quality_score = category_results["quality"]["category_score"]
-    stability_score = category_results["stability"]["category_score"]
+    final_score = sum(float(result["category_score"]) for result in category_results)
 
-    total_score = value_score + growth_score + quality_score + stability_score
-    quality_penalty = 0.0
-    final_score = max(total_score - quality_penalty, 0.0)
-
-    missing_metric_count = sum(
-        result["missing_metric_count"] for result in category_results.values()
+    total_possible_points = sum(
+        float(result["category_possible_points"]) for result in category_results
+    )
+    total_scorable_points = sum(
+        float(result["category_scorable_points"]) for result in category_results
     )
 
-    total_metrics = sum(
-        len(category["metrics"]) for category in categories.values()
+    score_data_coverage = (
+        total_scorable_points / total_possible_points
+        if total_possible_points > 0
+        else 0.0
     )
 
-    if missing_metric_count == 0:
-        score_confidence = "high"
-    elif missing_metric_count <= max(2, total_metrics * 0.25):
-        score_confidence = "medium"
-    else:
-        score_confidence = "low"
+    missing_metrics = []
+    for category_result in category_results:
+        for metric_name in category_result["missing_metrics"]:
+            missing_metrics.append(f"{category_result['category_name']}:{metric_name}")
 
-    scoring_notes = []
-    if missing_metric_count:
-        scoring_notes.append(f"{missing_metric_count} metrics missing or neutral-scored.")
+    score_confidence, confidence_notes = determine_score_confidence(
+        category_results=category_results,
+        score_data_coverage=score_data_coverage,
+        row=row,
+        scoring_config=scoring_config,
+    )
 
-    return {
+    result: dict[str, Any] = {
         "source_symbol": row.get("source_symbol"),
         "ticker": row.get("ticker"),
         "name": row.get("name"),
         "sector": row.get("sector"),
         "industry": row.get("industry"),
-        "total_score": round(total_score, 2),
-        "value_score": round(value_score, 2),
-        "growth_score": round(growth_score, 2),
-        "quality_score": round(quality_score, 2),
-        "stability_score": round(stability_score, 2),
-        "quality_penalty": round(quality_penalty, 2),
+        "market_capitalization": row.get("market_capitalization"),
         "final_score": round(final_score, 2),
+        "score_data_coverage": round(score_data_coverage, 4),
         "score_confidence": score_confidence,
-        "missing_metric_count": int(missing_metric_count),
-        "data_quality_flag_count": 0,
-        "scoring_notes": " ".join(scoring_notes),
+        "score_confidence_notes": ";".join(confidence_notes),
+        "missing_metric_count": len(missing_metrics),
+        "missing_metrics": ";".join(missing_metrics),
     }
+
+    for category_result in category_results:
+        category_name = category_result["category_name"]
+
+        result[f"{category_name}_score"] = round(
+            float(category_result["category_score"]),
+            2,
+        )
+        result[f"{category_name}_coverage"] = category_result["category_coverage"]
+        result[f"{category_name}_confidence"] = category_result["category_confidence"]
+        result[f"{category_name}_reweighted"] = category_result["category_reweighted"]
+
+    result["_category_results"] = category_results
+
+    return result
 
 
 def merge_scoring_inputs(
     normalized_metrics: pd.DataFrame,
     financial_summary: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Merge normalized company metrics with financial statement summary metrics."""
+    """Merge normalized company metrics and financial statement summary."""
     if normalized_metrics.empty:
         raise ValueError("normalized_metrics is empty.")
 
@@ -340,19 +496,27 @@ def merge_scoring_inputs(
     )
 
 
-def score_companies(scoring_input: pd.DataFrame, scoring_config: dict[str, Any]) -> pd.DataFrame:
-    """Score all companies in a scoring input DataFrame."""
-    if scoring_input.empty:
-        return pd.DataFrame()
-
+def score_companies(
+    scoring_input: pd.DataFrame,
+    scoring_config: dict[str, Any],
+) -> pd.DataFrame:
+    """Score all companies in a merged scoring input table."""
     rows = []
 
     for _, row in scoring_input.iterrows():
-        rows.append(score_one_company(row=row, scoring_config=scoring_config))
+        result = score_one_company(
+            row=row,
+            scoring_config=scoring_config,
+        )
+        result.pop("_category_results", None)
+        rows.append(result)
 
     scored = pd.DataFrame(rows)
 
     if scored.empty:
         return scored
 
-    return scored.sort_values(by=["final_score", "source_symbol"], ascending=[False, True])
+    return scored.sort_values(
+        by=["final_score", "score_data_coverage"],
+        ascending=[False, False],
+    ).reset_index(drop=True)
