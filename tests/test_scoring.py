@@ -1,10 +1,11 @@
 """
-Tests for transparent rule-based stock scoring.
+Tests for C6 transparent rule-based stock scoring.
 
-These tests use small fake DataFrames and dictionaries, so they do not require:
-- API access
-- .env
-- raw EODHD JSON files
+C6 policy:
+- Missing metrics receive zero direct score.
+- Category scores are reweighted only when category coverage is sufficient.
+- Low-coverage categories are not reweighted.
+- Score confidence is based on overall data coverage and risk flags.
 """
 
 from pathlib import Path
@@ -31,10 +32,20 @@ from src.scoring import (
 
 
 def minimal_scoring_config() -> dict:
-    """Return a small scoring config for tests."""
+    """Return a small C6-compatible scoring config for tests."""
     return {
         "score_model": {
             "total_points": 100,
+            "category_scoring_policy": {
+                "min_category_coverage_for_reweight": 0.60,
+            },
+            "score_confidence_policy": {
+                "high_overall_coverage": 0.85,
+                "medium_overall_coverage": 0.70,
+                "cap_to_medium_if_any_category_below": 0.60,
+                "cap_to_low_if_sector_special_handling": True,
+                "cap_to_low_if_summary_quality_flags_present": True,
+            },
             "categories": {
                 "value": {
                     "weight": 35,
@@ -45,7 +56,6 @@ def minimal_scoring_config() -> dict:
                             "fallback_fields": ["trailing_pe"],
                             "points": 35,
                             "direction": "lower_is_better",
-                            "missing_action": "neutral",
                             "thresholds": {
                                 "excellent": 10,
                                 "good": 15,
@@ -64,7 +74,6 @@ def minimal_scoring_config() -> dict:
                             "field": "revenue_growth_yoy",
                             "points": 20,
                             "direction": "higher_is_better",
-                            "missing_action": "neutral",
                             "thresholds": {
                                 "excellent": 0.15,
                                 "good": 0.08,
@@ -83,7 +92,6 @@ def minimal_scoring_config() -> dict:
                             "field": "latest_net_margin",
                             "points": 35,
                             "direction": "higher_is_better",
-                            "missing_action": "neutral",
                             "thresholds": {
                                 "excellent": 0.20,
                                 "good": 0.12,
@@ -102,16 +110,11 @@ def minimal_scoring_config() -> dict:
                             "field": "beta",
                             "points": 10,
                             "direction": "target_range",
-                            "missing_action": "neutral",
                             "target_range": {
                                 "min": 0.6,
                                 "max": 1.3,
                             },
                             "thresholds": {
-                                "excellent": 1.0,
-                                "good": 1.3,
-                                "fair": 1.6,
-                                "weak": 2.0,
                                 "poor": 2.5,
                             },
                         }
@@ -120,8 +123,16 @@ def minimal_scoring_config() -> dict:
             },
         },
         "missing_value_policy": {
-            "neutral_score_fraction": 0.50,
-            "zero_score_fraction": 0.00,
+            "missing_metric_score": 0,
+            "reweight_observed_metrics_only": True,
+            "min_category_coverage_for_reweight": 0.60,
+        },
+        "sector_special_handling": {
+            "financials": {
+                "matching_keywords": ["financial", "bank", "insurance"],
+                "confidence_cap": "low",
+                "reason": "Financial companies need sector-specific scoring.",
+            }
         },
     }
 
@@ -135,11 +146,13 @@ def sample_company_row() -> pd.Series:
             "name": "Apple Inc",
             "sector": "Technology",
             "industry": "Consumer Electronics",
+            "market_capitalization": 3000000000000,
             "pe_ratio": 12,
             "trailing_pe": 13,
             "revenue_growth_yoy": 0.10,
             "latest_net_margin": 0.22,
             "beta": 1.0,
+            "summary_quality_flags": "",
         }
     )
 
@@ -228,10 +241,10 @@ def test_get_metric_value_uses_fallback_when_primary_missing():
     assert field_used == "trailing_pe"
 
 
-def test_missing_metric_score_uses_neutral_and_zero_policy():
+def test_missing_metric_score_returns_zero_under_c6_policy():
     config = minimal_scoring_config()
 
-    assert missing_metric_score(10, "neutral", config) == 5.0
+    assert missing_metric_score(10, "neutral", config) == 0.0
     assert missing_metric_score(10, "zero", config) == 0.0
 
 
@@ -249,7 +262,7 @@ def test_score_lower_is_better_awards_expected_points():
     assert score_lower_is_better(20, 10, thresholds) == 6
     assert score_lower_is_better(35, 10, thresholds) == 4
     assert score_lower_is_better(50, 10, thresholds) == 2
-    assert score_lower_is_better(100, 10, thresholds) == 0
+    assert score_lower_is_better(80, 10, thresholds) == 0
 
 
 def test_score_higher_is_better_awards_expected_points():
@@ -265,7 +278,7 @@ def test_score_higher_is_better_awards_expected_points():
     assert score_higher_is_better(0.10, 10, thresholds) == 8
     assert score_higher_is_better(0.05, 10, thresholds) == 6
     assert score_higher_is_better(0.01, 10, thresholds) == 4
-    assert score_higher_is_better(-0.02, 10, thresholds) == 2
+    assert score_higher_is_better(-0.03, 10, thresholds) == 2
     assert score_higher_is_better(-0.20, 10, thresholds) == 0
 
 
@@ -286,7 +299,6 @@ def test_score_target_range_awards_full_points_inside_range():
 def test_score_metric_scores_present_metric():
     config = minimal_scoring_config()
     row = sample_company_row()
-
     metric_spec = config["score_model"]["categories"]["value"]["metrics"][0]
 
     result = score_metric(
@@ -300,12 +312,12 @@ def test_score_metric_scores_present_metric():
     assert result["metric_value"] == 12.0
     assert result["metric_score"] == 28.0
     assert result["metric_status"] == "scored"
+    assert result["scorable_points"] == 35.0
 
 
-def test_score_metric_uses_missing_policy_when_metric_missing():
+def test_score_metric_gives_zero_when_metric_missing():
     config = minimal_scoring_config()
     row = pd.Series({"ticker": "AAPL"})
-
     metric_spec = config["score_model"]["categories"]["value"]["metrics"][0]
 
     result = score_metric(
@@ -316,11 +328,13 @@ def test_score_metric_uses_missing_policy_when_metric_missing():
 
     assert result["metric_name"] == "pe_ratio"
     assert result["metric_value"] is None
-    assert result["metric_score"] == 17.5
+    assert result["metric_score"] == 0.0
     assert result["metric_status"] == "missing"
+    assert result["metric_note"] == "missing_no_credit"
+    assert result["scorable_points"] == 0.0
 
 
-def test_score_category_returns_category_score_and_missing_count():
+def test_score_category_returns_c6_category_fields():
     config = minimal_scoring_config()
     row = sample_company_row()
     category_spec = config["score_model"]["categories"]["value"]
@@ -332,14 +346,41 @@ def test_score_category_returns_category_score_and_missing_count():
         scoring_config=config,
     )
 
-    assert result["category"] == "value"
-    assert result["category_points"] == 35
+    assert result["category_name"] == "value"
+    assert result["category_weight"] == 35.0
     assert result["category_score"] == 28.0
-    assert result["missing_metric_count"] == 0
+    assert result["category_raw_score"] == 28.0
+    assert result["category_possible_points"] == 35.0
+    assert result["category_scorable_points"] == 35.0
+    assert result["category_coverage"] == 1.0
+    assert result["category_reweighted"] is True
+    assert result["category_confidence"] == "high"
+    assert result["missing_metrics"] == []
     assert len(result["metric_results"]) == 1
 
 
-def test_score_one_company_returns_expected_output_fields():
+def test_score_category_does_not_reweight_low_coverage_category():
+    config = minimal_scoring_config()
+    row = pd.Series({"ticker": "AAPL"})
+    category_spec = config["score_model"]["categories"]["value"]
+
+    result = score_category(
+        row=row,
+        category_name="value",
+        category_spec=category_spec,
+        scoring_config=config,
+    )
+
+    assert result["category_name"] == "value"
+    assert result["category_score"] == 0.0
+    assert result["category_raw_score"] == 0.0
+    assert result["category_coverage"] == 0.0
+    assert result["category_reweighted"] is False
+    assert result["category_confidence"] == "low"
+    assert result["missing_metrics"] == ["pe_ratio"]
+
+
+def test_score_one_company_returns_expected_c6_output_fields():
     config = minimal_scoring_config()
     row = sample_company_row()
 
@@ -348,32 +389,62 @@ def test_score_one_company_returns_expected_output_fields():
     assert result["source_symbol"] == "AAPL.US"
     assert result["ticker"] == "AAPL"
     assert result["name"] == "Apple Inc"
+
     assert result["value_score"] == 28.0
     assert result["growth_score"] == 16.0
     assert result["quality_score"] == 35.0
     assert result["stability_score"] == 10.0
-    assert result["total_score"] == 89.0
     assert result["final_score"] == 89.0
+
+    assert result["score_data_coverage"] == 1.0
     assert result["score_confidence"] == "high"
     assert result["missing_metric_count"] == 0
+    assert result["missing_metrics"] == ""
+
+    assert result["value_coverage"] == 1.0
+    assert result["growth_coverage"] == 1.0
+    assert result["quality_coverage"] == 1.0
+    assert result["stability_coverage"] == 1.0
+
+    assert "_category_results" in result
 
 
 def test_score_one_company_lowers_confidence_when_metrics_missing():
     config = minimal_scoring_config()
-    row = pd.Series(
-        {
-            "source_symbol": "AAPL.US",
-            "ticker": "AAPL",
-            "name": "Apple Inc",
-            "sector": "Technology",
-            "industry": "Consumer Electronics",
-        }
-    )
+    row = sample_company_row()
+    row["pe_ratio"] = None
+    row["trailing_pe"] = None
+    row["revenue_growth_yoy"] = None
 
     result = score_one_company(row=row, scoring_config=config)
 
-    assert result["missing_metric_count"] == 4
+    assert result["missing_metric_count"] == 2
+    assert "value:pe_ratio" in result["missing_metrics"]
+    assert "growth:revenue_growth_yoy" in result["missing_metrics"]
+    assert result["score_confidence"] in {"low", "medium"}
+
+
+def test_score_one_company_caps_financial_sector_confidence():
+    config = minimal_scoring_config()
+    row = sample_company_row()
+    row["sector"] = "Financial Services"
+    row["industry"] = "Banks"
+
+    result = score_one_company(row=row, scoring_config=config)
+
     assert result["score_confidence"] == "low"
+    assert "sector_special_handling:financials" in result["score_confidence_notes"]
+
+
+def test_score_one_company_caps_confidence_when_summary_flags_present():
+    config = minimal_scoring_config()
+    row = sample_company_row()
+    row["summary_quality_flags"] = "negative_equity"
+
+    result = score_one_company(row=row, scoring_config=config)
+
+    assert result["score_confidence"] == "low"
+    assert "summary_quality_flags_present" in result["score_confidence_notes"]
 
 
 def test_merge_scoring_inputs_merges_on_source_symbol():
@@ -383,7 +454,7 @@ def test_merge_scoring_inputs_merges_on_source_symbol():
                 "source_symbol": "AAPL.US",
                 "ticker": "AAPL",
                 "name": "Apple Inc",
-                "pe_ratio": 12,
+                "sector": "Technology",
             }
         ]
     )
@@ -392,8 +463,8 @@ def test_merge_scoring_inputs_merges_on_source_symbol():
         [
             {
                 "source_symbol": "AAPL.US",
-                "revenue_growth_yoy": 0.10,
-                "latest_net_margin": 0.22,
+                "latest_revenue": 400.0,
+                "latest_net_margin": 0.25,
             }
         ]
     )
@@ -405,8 +476,8 @@ def test_merge_scoring_inputs_merges_on_source_symbol():
 
     assert len(result) == 1
     assert result.loc[0, "source_symbol"] == "AAPL.US"
-    assert result.loc[0, "revenue_growth_yoy"] == 0.10
-    assert result.loc[0, "latest_net_margin"] == 0.22
+    assert result.loc[0, "latest_revenue"] == 400.0
+    assert result.loc[0, "latest_net_margin"] == 0.25
 
 
 def test_merge_scoring_inputs_returns_normalized_metrics_when_summary_empty():
@@ -426,26 +497,34 @@ def test_merge_scoring_inputs_returns_normalized_metrics_when_summary_empty():
         financial_summary=financial_summary,
     )
 
-    assert len(result) == 1
-    assert result.loc[0, "source_symbol"] == "AAPL.US"
-    assert result.loc[0, "ticker"] == "AAPL"
+    assert result.equals(normalized_metrics)
+
+
+def test_merge_scoring_inputs_raises_error_for_empty_normalized_metrics():
+    with pytest.raises(ValueError):
+        merge_scoring_inputs(
+            normalized_metrics=pd.DataFrame(),
+            financial_summary=pd.DataFrame(),
+        )
 
 
 def test_score_companies_scores_and_sorts_rows():
     config = minimal_scoring_config()
 
-    high_score_row = sample_company_row()
-
-    low_score_row = sample_company_row().copy()
-    low_score_row["source_symbol"] = "WEAK.US"
-    low_score_row["ticker"] = "WEAK"
-    low_score_row["name"] = "Weak Company"
-    low_score_row["pe_ratio"] = 100
-    low_score_row["revenue_growth_yoy"] = -0.20
-    low_score_row["latest_net_margin"] = -0.10
-    low_score_row["beta"] = 3.0
-
-    scoring_input = pd.DataFrame([high_score_row, low_score_row])
+    scoring_input = pd.DataFrame(
+        [
+            sample_company_row().to_dict(),
+            {
+                **sample_company_row().to_dict(),
+                "source_symbol": "WEAK.US",
+                "ticker": "WEAK",
+                "pe_ratio": 80,
+                "revenue_growth_yoy": -0.20,
+                "latest_net_margin": -0.05,
+                "beta": 3.0,
+            },
+        ]
+    )
 
     result = score_companies(
         scoring_input=scoring_input,
@@ -453,8 +532,8 @@ def test_score_companies_scores_and_sorts_rows():
     )
 
     assert len(result) == 2
-    assert result.iloc[0]["source_symbol"] == "AAPL.US"
-    assert result.iloc[0]["final_score"] > result.iloc[1]["final_score"]
+    assert result.loc[0, "source_symbol"] == "AAPL.US"
+    assert result.loc[0, "final_score"] > result.loc[1, "final_score"]
 
 
 def test_score_companies_handles_empty_input():
