@@ -3,6 +3,10 @@ metadata:
   input_source: "outputs/raw_samples/fundamentals_*.json"
   line_output_file: "outputs/financial_statement_lines.csv"
   coverage_output_file: "outputs/financial_statement_coverage.csv"
+  notes:
+    - "Preserve EODHD raw period labels and add standardized period labels."
+    - "Use source_symbol from the raw file name / requested symbol when available."
+    - "Do not infer restatements yet; only preserve metadata needed for later checks."
 
 statement_sections:
   income_statement:
@@ -18,8 +22,16 @@ statement_sections:
     eodhd_name: "Cash_Flow"
 
 period_types:
-  - yearly
-  - quarterly
+  yearly:
+    standard_period_type: "annual"
+  quarterly:
+    standard_period_type: "quarterly"
 
 metadata_fields:
   - currency_symbol
+
+quality_flag_rules:
+  missing_numeric_value: true
+  negative_revenue: true
+  negative_assets: true
+  missing_filing_date: true

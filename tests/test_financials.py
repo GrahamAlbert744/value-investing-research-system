@@ -15,11 +15,14 @@ import yaml
 
 from src.financials import (
     build_financial_statement_coverage,
+    build_quality_flags,
     extract_statement_lines,
     get_nested_value,
+    infer_raw_value_type,
     infer_source_symbol_from_fundamentals,
     load_financial_statement_config,
     safe_numeric,
+    standardize_period_type,
 )
 
 
@@ -40,7 +43,14 @@ def minimal_financial_statement_config() -> dict:
                 "eodhd_name": "Cash_Flow",
             },
         },
-        "period_types": ["yearly", "quarterly"],
+        "period_types": {
+            "yearly": {
+                "standard_period_type": "annual",
+            },
+            "quarterly": {
+                "standard_period_type": "quarterly",
+            },
+        },
     }
 
 
@@ -50,6 +60,7 @@ def minimal_fundamentals_data() -> dict:
         "General": {
             "Code": "AAPL",
             "Exchange": "US",
+            "PrimaryTicker": "AAPL.US",
             "Name": "Apple Inc",
         },
         "Financials": {
@@ -83,6 +94,7 @@ def minimal_fundamentals_data() -> dict:
                 "yearly": {
                     "2023-09-30": {
                         "date": "2023-09-30",
+                        "filing_date": "2023-11-03",
                         "totalAssets": 352583000000,
                         "totalLiab": 290437000000,
                     }
@@ -94,6 +106,7 @@ def minimal_fundamentals_data() -> dict:
                 "yearly": {
                     "2023-09-30": {
                         "date": "2023-09-30",
+                        "filing_date": "2023-11-03",
                         "totalCashFromOperatingActivities": 110543000000,
                         "capitalExpenditures": -10959000000,
                         "freeCashFlow": 99584000000,
@@ -138,13 +151,22 @@ def test_get_nested_value_returns_existing_nested_dict():
 def test_get_nested_value_returns_none_for_missing_path():
     data = minimal_fundamentals_data()
 
-    result = get_nested_value(data, "Financials.Missing_Statement")
+    result = get_nested_value(data, "Financials.Not_A_Statement")
 
     assert result is None
 
 
+def test_infer_source_symbol_from_fundamentals_uses_primary_ticker_first():
+    data = minimal_fundamentals_data()
+
+    result = infer_source_symbol_from_fundamentals(data)
+
+    assert result == "AAPL.US"
+
+
 def test_infer_source_symbol_from_fundamentals_uses_code_and_exchange():
     data = minimal_fundamentals_data()
+    data["General"].pop("PrimaryTicker")
 
     result = infer_source_symbol_from_fundamentals(data)
 
@@ -159,16 +181,43 @@ def test_infer_source_symbol_from_fundamentals_falls_back_to_unknown():
     assert result == "UNKNOWN"
 
 
+def test_standardize_period_type_maps_yearly_to_annual():
+    config = minimal_financial_statement_config()
+
+    assert standardize_period_type("yearly", config) == "annual"
+    assert standardize_period_type("quarterly", config) == "quarterly"
+
+
 def test_safe_numeric_converts_valid_values():
-    assert safe_numeric("10.5") == 10.5
-    assert safe_numeric(42) == 42.0
-    assert safe_numeric(-100) == -100.0
+    assert safe_numeric("123.45") == 123.45
+    assert safe_numeric(100) == 100.0
+    assert safe_numeric(-50) == -50.0
 
 
 def test_safe_numeric_returns_none_for_invalid_values():
     assert safe_numeric(None) is None
     assert safe_numeric("") is None
     assert safe_numeric("not_a_number") is None
+
+
+def test_infer_raw_value_type_labels_values():
+    assert infer_raw_value_type(None) == "null"
+    assert infer_raw_value_type(True) == "bool"
+    assert infer_raw_value_type(1) == "int"
+    assert infer_raw_value_type(1.5) == "float"
+    assert infer_raw_value_type("text") == "str"
+
+
+def test_build_quality_flags_identifies_basic_issues():
+    flags = build_quality_flags(
+        line_item="totalRevenue",
+        value=-100,
+        value_numeric=-100.0,
+        line_items={"date": "2023-09-30"},
+    )
+
+    assert "negative_revenue" in flags
+    assert "missing_filing_date" in flags
 
 
 def test_extract_statement_lines_creates_long_format_rows():
@@ -183,12 +232,18 @@ def test_extract_statement_lines_creates_long_format_rows():
     expected_columns = {
         "source_symbol",
         "statement_type",
+        "raw_period_type",
         "period_type",
         "fiscal_date",
+        "reported_date",
+        "filing_date",
         "currency",
+        "statement_currency_source",
         "line_item",
         "value",
         "value_numeric",
+        "raw_value_type",
+        "quality_flags",
         "source_path",
         "extracted_at_utc",
     }
@@ -197,10 +252,29 @@ def test_extract_statement_lines_creates_long_format_rows():
     assert "income_statement" in set(result["statement_type"])
     assert "balance_sheet" in set(result["statement_type"])
     assert "cash_flow" in set(result["statement_type"])
-    assert "yearly" in set(result["period_type"])
+
+    assert "yearly" in set(result["raw_period_type"])
+    assert "annual" in set(result["period_type"])
     assert "quarterly" in set(result["period_type"])
-    assert "totalRevenue" in set(result["line_item"])
-    assert "freeCashFlow" in set(result["line_item"])
+
+    revenue_row = result[
+        (result["statement_type"] == "income_statement")
+        & (result["raw_period_type"] == "yearly")
+        & (result["period_type"] == "annual")
+        & (result["fiscal_date"] == "2023-09-30")
+        & (result["line_item"] == "totalRevenue")
+    ].iloc[0]
+
+    assert revenue_row["source_symbol"] == "AAPL.US"
+    assert revenue_row["currency"] == "USD"
+    assert revenue_row["statement_currency_source"] == (
+        "Financials.Income_Statement.currency_symbol"
+    )
+    assert revenue_row["value_numeric"] == 383285000000.0
+    assert revenue_row["raw_value_type"] == "int"
+    assert revenue_row["source_path"] == (
+        "Financials.Income_Statement.yearly.2023-09-30.totalRevenue"
+    )
 
 
 def test_extract_statement_lines_uses_source_symbol_override():
@@ -210,19 +284,14 @@ def test_extract_statement_lines_uses_source_symbol_override():
     result = extract_statement_lines(
         data=data,
         config=config,
-        source_symbol="TEST.US",
+        source_symbol="REQUESTED_AAPL.US",
     )
 
-    assert set(result["source_symbol"]) == {"TEST.US"}
+    assert set(result["source_symbol"]) == {"REQUESTED_AAPL.US"}
 
 
 def test_extract_statement_lines_returns_empty_dataframe_without_financials():
-    data = {
-        "General": {
-            "Code": "AAPL",
-            "Exchange": "US",
-        }
-    }
+    data = {"General": {"Code": "AAPL", "Exchange": "US"}}
     config = minimal_financial_statement_config()
 
     result = extract_statement_lines(data=data, config=config)
@@ -241,16 +310,17 @@ def test_build_financial_statement_coverage_summarizes_statement_periods():
     assert isinstance(coverage, pd.DataFrame)
     assert not coverage.empty
 
-    income_yearly = coverage[
+    income_annual = coverage[
         (coverage["statement_type"] == "income_statement")
-        & (coverage["period_type"] == "yearly")
+        & (coverage["raw_period_type"] == "yearly")
+        & (coverage["period_type"] == "annual")
     ].iloc[0]
 
-    assert income_yearly["source_symbol"] == "AAPL.US"
-    assert income_yearly["period_count"] == 2
-    assert income_yearly["latest_fiscal_date"] == "2023-09-30"
-    assert income_yearly["earliest_fiscal_date"] == "2022-09-30"
-    assert income_yearly["currency"] == "USD"
+    assert income_annual["source_symbol"] == "AAPL.US"
+    assert income_annual["period_count"] == 2
+    assert income_annual["latest_fiscal_date"] == "2023-09-30"
+    assert income_annual["earliest_fiscal_date"] == "2022-09-30"
+    assert income_annual["currency"] == "USD"
 
 
 def test_build_financial_statement_coverage_handles_empty_input():
@@ -263,6 +333,7 @@ def test_build_financial_statement_coverage_handles_empty_input():
     assert list(coverage.columns) == [
         "source_symbol",
         "statement_type",
+        "raw_period_type",
         "period_type",
         "period_count",
         "line_count",
