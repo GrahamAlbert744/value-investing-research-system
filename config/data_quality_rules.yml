@@ -1,74 +1,229 @@
 metadata:
-  purpose: "First-pass data-quality rules for normalized EODHD metrics."
+  purpose: "Expanded data-quality rules for normalized EODHD metrics."
   input_file: "outputs/normalized_metrics.csv"
   output_file: "outputs/data_quality_report.csv"
+  notes:
+    - "Critical/high failures should prevent normal scoring or valuation."
+    - "Medium/low issues should be surfaced as warnings."
+    - "These rules are intentionally conservative for an MVP value-investing pipeline."
 
 required_fields:
   - field: source_symbol
-    severity: high
+    severity: critical
+    decision: reject
     description: "Original ticker symbol used to pull data."
+
   - field: ticker
-    severity: high
-    description: "Normalized ticker code."
+    severity: critical
+    decision: reject
+    description: "Normalized ticker identifier."
+
   - field: name
-    severity: high
+    severity: critical
+    decision: reject
     description: "Company name."
-  - field: sector
-    severity: medium
-    description: "Company sector."
-  - field: industry
-    severity: medium
-    description: "Company industry."
-  - field: currency
-    severity: medium
-    description: "Reported currency."
-  - field: market_capitalization
+
+  - field: company_name
     severity: high
-    description: "Market capitalization."
+    decision: flag
+    description: "Company name alias used by downstream outputs."
+
+  - field: exchange
+    severity: high
+    decision: flag
+    description: "Exchange identifier."
+
+  - field: security_type
+    severity: critical
+    decision: reject
+    description: "Security type is needed to avoid scoring ETFs/funds/preferreds as common stocks."
+
+  - field: sector
+    severity: high
+    decision: flag
+    description: "Company sector is needed for sector-aware scoring."
+
+  - field: industry
+    severity: high
+    decision: flag
+    description: "Company industry is needed for peer comparison and risk review."
+
+  - field: currency
+    severity: high
+    decision: flag
+    description: "Reported security currency."
+
+  - field: market_capitalization
+    severity: critical
+    decision: reject
+    description: "Market capitalization is required for ranking, valuation, and FCF yield."
+
+  - field: fundamentals_updated_at
+    severity: high
+    decision: flag
+    description: "EODHD fundamentals update date is needed for staleness checks."
+
+  - field: most_recent_quarter
+    severity: high
+    decision: flag
+    description: "Most recent reported quarter is needed for freshness checks."
 
 numeric_bounds:
   - field: market_capitalization
     min_value: 1
     max_value:
-    severity: high
-    description: "Market cap should be positive."
+    severity: critical
+    decision: reject
+    description: "Market cap must be positive."
+
   - field: pe_ratio
     min_value: 0
     max_value: 200
     severity: medium
-    description: "Very high or negative PE ratios should be flagged."
+    decision: flag
+    description: "Very high or negative PE ratios should be reviewed."
+
   - field: trailing_pe
     min_value: 0
     max_value: 200
     severity: medium
-    description: "Very high or negative trailing PE ratios should be flagged."
+    decision: flag
+    description: "Very high or negative trailing PE ratios should be reviewed."
+
   - field: forward_pe
     min_value: 0
     max_value: 200
     severity: medium
-    description: "Very high or negative forward PE ratios should be flagged."
+    decision: flag
+    description: "Very high or negative forward PE ratios should be reviewed."
+
   - field: price_sales_ttm
     min_value: 0
     max_value: 100
     severity: medium
+    decision: flag
     description: "Extremely high price/sales values should be reviewed."
+
   - field: price_book_mrq
     min_value: 0
     max_value: 100
     severity: medium
+    decision: flag
     description: "Extremely high price/book values should be reviewed."
+
+  - field: enterprise_value_ebitda
+    min_value: 0
+    max_value: 100
+    severity: medium
+    decision: flag
+    description: "Extremely high EV/EBITDA values should be reviewed."
+
   - field: dividend_yield
     min_value: 0
     max_value: 0.25
     severity: low
+    decision: flag
     description: "Dividend yields above 25% are unusual and should be reviewed."
+
+  - field: forward_annual_dividend_yield
+    min_value: 0
+    max_value: 0.25
+    severity: low
+    decision: flag
+    description: "Forward annual dividend yields above 25% are unusual and should be reviewed."
+
   - field: return_on_equity_ttm
     min_value: -2
     max_value: 2
     severity: low
+    decision: flag
     description: "ROE outside -200% to 200% should be reviewed."
+
+  - field: return_on_assets_ttm
+    min_value: -1
+    max_value: 1
+    severity: low
+    decision: flag
+    description: "ROA outside -100% to 100% should be reviewed."
+
   - field: profit_margin
     min_value: -1
     max_value: 1
     severity: low
+    decision: flag
     description: "Profit margin outside -100% to 100% should be reviewed."
+
+  - field: operating_margin_ttm
+    min_value: -1
+    max_value: 1
+    severity: low
+    decision: flag
+    description: "Operating margin outside -100% to 100% should be reviewed."
+
+allowed_values:
+  - field: security_type
+    allowed_values:
+      - Common Stock
+      - Common Stock Primary Class
+      - COMMON STOCK
+      - common_stock
+      - stock
+    severity: critical
+    decision: reject
+    description: "Only common stocks should enter the normal value-investing scoring universe."
+
+boolean_flags:
+  - field: is_delisted
+    bad_values:
+      - true
+      - "true"
+      - "1"
+      - 1
+      - yes
+      - "yes"
+      - Y
+      - y
+    severity: critical
+    decision: reject
+    description: "Delisted securities should be excluded from the active investing universe."
+
+date_staleness:
+  - field: fundamentals_updated_at
+    max_age_days: 180
+    severity: high
+    decision: flag
+    description: "Fundamentals updated more than 180 days ago should be treated as stale."
+
+  - field: most_recent_quarter
+    max_age_days: 240
+    severity: high
+    decision: flag
+    description: "Most recent quarter older than roughly two reporting cycles should be reviewed."
+
+  - field: last_price_date
+    max_age_days: 7
+    severity: high
+    decision: reject
+    description: "Latest price older than 7 calendar days should not be used for current valuation."
+
+duplicate_risk_fields:
+  - field: isin
+    severity: medium
+    decision: flag
+    description: "ISIN is useful for identifying ADR/local duplicate risks."
+
+  - field: open_figi
+    severity: low
+    decision: flag
+    description: "OpenFIGI is useful for identifying duplicate/security identity risks."
+
+soft_warning_fields:
+  - field: beta
+    severity: low
+    decision: allow
+    description: "Missing beta is acceptable but reduces stability-signal completeness."
+
+  - field: shares_outstanding
+    severity: medium
+    decision: flag
+    description: "Missing shares outstanding limits per-share valuation and market-cap validation."
