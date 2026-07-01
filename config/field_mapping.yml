@@ -1,259 +1,360 @@
 metadata:
-  source: EODHD fundamentals demo response
-  field_audit_file: outputs\eodhd_field_audit.csv
+  purpose: Fallback-aware mapping from normalized field names to EODHD raw fundamentals
+    paths.
+  source_file: outputs\eodhd_field_audit.csv
   notes:
-  - Generated from outputs/eodhd_field_audit.csv.
-  - Only paths found in the audit are marked as mapped.
-  - Missing fields should be reviewed before normalization.
+  - raw_paths is the ordered fallback list.
+  - raw_path is retained for backward compatibility.
+  - Only paths found in outputs/eodhd_field_audit.csv are mapped.
 mapped_fields:
-  ticker:
-    raw_path: General.Code
-    candidate_paths_checked:
+  code:
+    raw_paths:
     - General.Code
+    raw_path: General.Code
     category: identity
     required: true
-    description: Ticker symbol without exchange suffix if provided by EODHD.
-    status: mapped
-  exchange:
-    raw_path: General.Exchange
-    candidate_paths_checked:
-    - General.Exchange
+    description: Ticker code without exchange suffix.
+  primary_ticker:
+    raw_paths:
+    - General.PrimaryTicker
+    raw_path: General.PrimaryTicker
+    category: identity
+    required: false
+    description: Primary ticker if provided by EODHD.
+  ticker:
+    raw_paths:
+    - General.PrimaryTicker
+    - General.Code
+    raw_path: General.PrimaryTicker
     category: identity
     required: true
-    description: Exchange code or exchange name.
-    status: mapped
+    description: Best available ticker identifier from fundamentals.
   name:
-    raw_path: General.Name
-    candidate_paths_checked:
+    raw_paths:
     - General.Name
+    raw_path: General.Name
     category: identity
     required: true
     description: Company name.
-    status: mapped
-  type:
-    raw_path: General.Type
-    candidate_paths_checked:
+  company_name:
+    raw_paths:
+    - General.Name
+    raw_path: General.Name
+    category: identity
+    required: true
+    description: Company name duplicate for downstream compatibility.
+  exchange:
+    raw_paths:
+    - General.Exchange
+    raw_path: General.Exchange
+    category: identity
+    required: true
+    description: Exchange code or EODHD exchange identifier.
+  security_type:
+    raw_paths:
     - General.Type
+    raw_path: General.Type
+    category: identity
+    required: true
+    description: Security type such as Common Stock, ETF, Fund, etc.
+  type:
+    raw_paths:
+    - General.Type
+    raw_path: General.Type
     category: identity
     required: false
-    description: Security type, such as Common Stock or ETF.
-    status: mapped
-  sector:
-    raw_path: General.Sector
-    candidate_paths_checked:
-    - General.Sector
-    category: identity
-    required: true
-    description: Company sector.
-    status: mapped
-  industry:
-    raw_path: General.Industry
-    candidate_paths_checked:
-    - General.Industry
-    category: identity
-    required: true
-    description: Company industry.
-    status: mapped
+    description: Backward-compatible alias for security_type.
   country:
-    raw_path: General.CountryName
-    candidate_paths_checked:
+    raw_paths:
     - General.CountryName
     - General.CountryISO
+    raw_path: General.CountryName
     category: identity
     required: false
     description: Company country.
-    status: mapped
+  country_iso:
+    raw_paths:
+    - General.CountryISO
+    raw_path: General.CountryISO
+    category: identity
+    required: false
+    description: Company country ISO code.
   currency:
-    raw_path: General.CurrencyCode
-    candidate_paths_checked:
+    raw_paths:
     - General.CurrencyCode
     - General.CurrencyName
+    raw_path: General.CurrencyCode
     category: metadata
     required: true
     description: Reported currency.
-    status: mapped
+  sector:
+    raw_paths:
+    - General.Sector
+    raw_path: General.Sector
+    category: identity
+    required: true
+    description: Company sector.
+  industry:
+    raw_paths:
+    - General.Industry
+    raw_path: General.Industry
+    category: identity
+    required: true
+    description: Company industry.
+  is_delisted:
+    raw_paths:
+    - General.IsDelisted
+    raw_path: General.IsDelisted
+    category: identity
+    required: false
+    description: Whether the security is delisted, if provided.
+  isin:
+    raw_paths:
+    - General.ISIN
+    raw_path: General.ISIN
+    category: identity
+    required: false
+    description: ISIN identifier.
+  open_figi:
+    raw_paths:
+    - General.OpenFigi
+    raw_path: General.OpenFigi
+    category: identity
+    required: false
+    description: OpenFIGI identifier.
+  cik:
+    raw_paths:
+    - General.CIK
+    raw_path: General.CIK
+    category: identity
+    required: false
+    description: SEC CIK identifier when available.
+  lei:
+    raw_paths:
+    - General.LEI
+    raw_path: General.LEI
+    category: identity
+    required: false
+    description: Legal Entity Identifier when available.
+  fiscal_year_end:
+    raw_paths:
+    - General.FiscalYearEnd
+    raw_path: General.FiscalYearEnd
+    category: metadata
+    required: false
+    description: Fiscal year end.
+  ipo_date:
+    raw_paths:
+    - General.IPODate
+    raw_path: General.IPODate
+    category: metadata
+    required: false
+    description: IPO date.
+  fundamentals_updated_at:
+    raw_paths:
+    - General.UpdatedAt
+    raw_path: General.UpdatedAt
+    category: metadata
+    required: false
+    description: EODHD fundamentals update timestamp.
   market_capitalization:
-    raw_path: Highlights.MarketCapitalization
-    candidate_paths_checked:
+    raw_paths:
     - Highlights.MarketCapitalization
+    raw_path: Highlights.MarketCapitalization
     category: valuation
     required: true
     description: Market capitalization.
-    status: mapped
-  ebitda:
-    raw_path: Highlights.EBITDA
-    candidate_paths_checked:
-    - Highlights.EBITDA
-    category: quality
-    required: false
-    description: EBITDA.
-    status: mapped
-  pe_ratio:
-    raw_path: Highlights.PERatio
-    candidate_paths_checked:
-    - Highlights.PERatio
-    category: valuation
-    required: false
-    description: Price-to-earnings ratio.
-    status: mapped
-  peg_ratio:
-    raw_path: Highlights.PEGRatio
-    candidate_paths_checked:
-    - Highlights.PEGRatio
-    category: valuation
-    required: false
-    description: Price/earnings-to-growth ratio.
-    status: mapped
-  book_value:
-    raw_path: Highlights.BookValue
-    candidate_paths_checked:
-    - Highlights.BookValue
-    category: valuation
-    required: false
-    description: Book value per share or reported book value metric.
-    status: mapped
-  dividend_yield:
-    raw_path: Highlights.DividendYield
-    candidate_paths_checked:
-    - Highlights.DividendYield
-    category: dividends
-    required: false
-    description: Dividend yield.
-    status: mapped
-  eps:
-    raw_path: Highlights.EarningsShare
-    candidate_paths_checked:
-    - Highlights.EarningsShare
-    category: quality
-    required: false
-    description: Earnings per share.
-    status: mapped
-  revenue_ttm:
-    raw_path: Highlights.RevenueTTM
-    candidate_paths_checked:
-    - Highlights.RevenueTTM
-    category: quality
-    required: false
-    description: Trailing twelve-month revenue.
-    status: mapped
-  gross_profit_ttm:
-    raw_path: Highlights.GrossProfitTTM
-    candidate_paths_checked:
-    - Highlights.GrossProfitTTM
-    category: quality
-    required: false
-    description: Trailing twelve-month gross profit.
-    status: mapped
-  diluted_eps_ttm:
-    raw_path: Highlights.DilutedEpsTTM
-    candidate_paths_checked:
-    - Highlights.DilutedEpsTTM
-    category: quality
-    required: false
-    description: Trailing twelve-month diluted EPS.
-    status: mapped
-  quarterly_revenue_growth_yoy:
-    raw_path: Highlights.QuarterlyRevenueGrowthYOY
-    candidate_paths_checked:
-    - Highlights.QuarterlyRevenueGrowthYOY
-    category: growth
-    required: false
-    description: Year-over-year quarterly revenue growth.
-    status: mapped
-  quarterly_earnings_growth_yoy:
-    raw_path: Highlights.QuarterlyEarningsGrowthYOY
-    candidate_paths_checked:
-    - Highlights.QuarterlyEarningsGrowthYOY
-    category: growth
-    required: false
-    description: Year-over-year quarterly earnings growth.
-    status: mapped
-  profit_margin:
-    raw_path: Highlights.ProfitMargin
-    candidate_paths_checked:
-    - Highlights.ProfitMargin
-    category: quality
-    required: false
-    description: Profit margin.
-    status: mapped
-  operating_margin_ttm:
-    raw_path: Highlights.OperatingMarginTTM
-    candidate_paths_checked:
-    - Highlights.OperatingMarginTTM
-    category: quality
-    required: false
-    description: Trailing twelve-month operating margin.
-    status: mapped
-  return_on_assets_ttm:
-    raw_path: Highlights.ReturnOnAssetsTTM
-    candidate_paths_checked:
-    - Highlights.ReturnOnAssetsTTM
-    category: quality
-    required: false
-    description: Trailing twelve-month return on assets.
-    status: mapped
-  return_on_equity_ttm:
-    raw_path: Highlights.ReturnOnEquityTTM
-    candidate_paths_checked:
-    - Highlights.ReturnOnEquityTTM
-    category: quality
-    required: false
-    description: Trailing twelve-month return on equity.
-    status: mapped
-  trailing_pe:
-    raw_path: Valuation.TrailingPE
-    candidate_paths_checked:
-    - Valuation.TrailingPE
-    category: valuation
-    required: false
-    description: Trailing price-to-earnings ratio.
-    status: mapped
-  forward_pe:
-    raw_path: Valuation.ForwardPE
-    candidate_paths_checked:
-    - Valuation.ForwardPE
-    category: valuation
-    required: false
-    description: Forward price-to-earnings ratio.
-    status: mapped
-  price_sales_ttm:
-    raw_path: Valuation.PriceSalesTTM
-    candidate_paths_checked:
-    - Valuation.PriceSalesTTM
-    category: valuation
-    required: false
-    description: Price-to-sales ratio.
-    status: mapped
-  price_book_mrq:
-    raw_path: Valuation.PriceBookMRQ
-    candidate_paths_checked:
-    - Valuation.PriceBookMRQ
-    category: valuation
-    required: false
-    description: Price-to-book ratio.
-    status: mapped
   enterprise_value:
-    raw_path: Valuation.EnterpriseValue
-    candidate_paths_checked:
+    raw_paths:
     - Valuation.EnterpriseValue
+    raw_path: Valuation.EnterpriseValue
     category: valuation
     required: false
     description: Enterprise value.
-    status: mapped
+  ebitda:
+    raw_paths:
+    - Highlights.EBITDA
+    raw_path: Highlights.EBITDA
+    category: quality
+    required: false
+    description: EBITDA.
+  pe_ratio:
+    raw_paths:
+    - Highlights.PERatio
+    - Valuation.TrailingPE
+    raw_path: Highlights.PERatio
+    category: valuation
+    required: false
+    description: Price-to-earnings ratio.
+  trailing_pe:
+    raw_paths:
+    - Valuation.TrailingPE
+    - Highlights.PERatio
+    raw_path: Valuation.TrailingPE
+    category: valuation
+    required: false
+    description: Trailing price-to-earnings ratio.
+  forward_pe:
+    raw_paths:
+    - Valuation.ForwardPE
+    raw_path: Valuation.ForwardPE
+    category: valuation
+    required: false
+    description: Forward price-to-earnings ratio.
+  peg_ratio:
+    raw_paths:
+    - Highlights.PEGRatio
+    raw_path: Highlights.PEGRatio
+    category: valuation
+    required: false
+    description: PEG ratio.
+  book_value:
+    raw_paths:
+    - Highlights.BookValue
+    raw_path: Highlights.BookValue
+    category: valuation
+    required: false
+    description: Book value metric.
+  price_sales_ttm:
+    raw_paths:
+    - Valuation.PriceSalesTTM
+    raw_path: Valuation.PriceSalesTTM
+    category: valuation
+    required: false
+    description: Price-to-sales ratio.
+  price_book_mrq:
+    raw_paths:
+    - Valuation.PriceBookMRQ
+    raw_path: Valuation.PriceBookMRQ
+    category: valuation
+    required: false
+    description: Price-to-book ratio.
   enterprise_value_revenue:
-    raw_path: Valuation.EnterpriseValueRevenue
-    candidate_paths_checked:
+    raw_paths:
     - Valuation.EnterpriseValueRevenue
+    raw_path: Valuation.EnterpriseValueRevenue
     category: valuation
     required: false
     description: Enterprise value to revenue.
-    status: mapped
   enterprise_value_ebitda:
-    raw_path: Valuation.EnterpriseValueEbitda
-    candidate_paths_checked:
+    raw_paths:
     - Valuation.EnterpriseValueEbitda
+    raw_path: Valuation.EnterpriseValueEbitda
     category: valuation
     required: false
     description: Enterprise value to EBITDA.
-    status: mapped
+  dividend_yield:
+    raw_paths:
+    - SplitsDividends.ForwardAnnualDividendYield
+    - Highlights.DividendYield
+    raw_path: SplitsDividends.ForwardAnnualDividendYield
+    category: dividends
+    required: false
+    description: Dividend yield. Prefer explicit forward annual dividend yield if
+      available.
+  payout_ratio:
+    raw_paths:
+    - SplitsDividends.PayoutRatio
+    raw_path: SplitsDividends.PayoutRatio
+    category: dividends
+    required: false
+    description: Dividend payout ratio.
+  eps:
+    raw_paths:
+    - Highlights.EarningsShare
+    raw_path: Highlights.EarningsShare
+    category: quality
+    required: false
+    description: Earnings per share.
+  diluted_eps_ttm:
+    raw_paths:
+    - Highlights.DilutedEpsTTM
+    raw_path: Highlights.DilutedEpsTTM
+    category: quality
+    required: false
+    description: Diluted EPS TTM.
+  revenue_ttm:
+    raw_paths:
+    - Highlights.RevenueTTM
+    raw_path: Highlights.RevenueTTM
+    category: quality
+    required: false
+    description: Revenue TTM.
+  gross_profit_ttm:
+    raw_paths:
+    - Highlights.GrossProfitTTM
+    raw_path: Highlights.GrossProfitTTM
+    category: quality
+    required: false
+    description: Gross profit TTM.
+  profit_margin:
+    raw_paths:
+    - Highlights.ProfitMargin
+    raw_path: Highlights.ProfitMargin
+    category: quality
+    required: false
+    description: Profit margin.
+  operating_margin_ttm:
+    raw_paths:
+    - Highlights.OperatingMarginTTM
+    raw_path: Highlights.OperatingMarginTTM
+    category: quality
+    required: false
+    description: Operating margin TTM.
+  return_on_assets_ttm:
+    raw_paths:
+    - Highlights.ReturnOnAssetsTTM
+    raw_path: Highlights.ReturnOnAssetsTTM
+    category: quality
+    required: false
+    description: Return on assets TTM.
+  return_on_equity_ttm:
+    raw_paths:
+    - Highlights.ReturnOnEquityTTM
+    raw_path: Highlights.ReturnOnEquityTTM
+    category: quality
+    required: false
+    description: Return on equity TTM.
+  quarterly_revenue_growth_yoy:
+    raw_paths:
+    - Highlights.QuarterlyRevenueGrowthYOY
+    raw_path: Highlights.QuarterlyRevenueGrowthYOY
+    category: growth
+    required: false
+    description: Quarterly revenue growth YoY.
+  quarterly_earnings_growth_yoy:
+    raw_paths:
+    - Highlights.QuarterlyEarningsGrowthYOY
+    raw_path: Highlights.QuarterlyEarningsGrowthYOY
+    category: growth
+    required: false
+    description: Quarterly earnings growth YoY.
+  most_recent_quarter:
+    raw_paths:
+    - Highlights.MostRecentQuarter
+    raw_path: Highlights.MostRecentQuarter
+    category: metadata
+    required: false
+    description: Most recent reported quarter.
+  shares_outstanding:
+    raw_paths:
+    - SharesStats.SharesOutstanding
+    raw_path: SharesStats.SharesOutstanding
+    category: shares
+    required: false
+    description: Shares outstanding.
+  shares_float:
+    raw_paths:
+    - SharesStats.SharesFloat
+    raw_path: SharesStats.SharesFloat
+    category: shares
+    required: false
+    description: Public float shares.
+  beta:
+    raw_paths:
+    - Technicals.Beta
+    raw_path: Technicals.Beta
+    category: stability
+    required: false
+    description: Beta.
 missing_fields: {}

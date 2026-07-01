@@ -1,10 +1,12 @@
 """
 Normalize EODHD fundamentals JSON into a flat company-level metrics row.
 
-This module:
-- Reads config/field_mapping.yml
-- Extracts mapped fields from raw EODHD JSON
-- Produces one clean dictionary suitable for CSV/database storage
+Supports both:
+- raw_path: single EODHD path
+- raw_paths: ordered fallback EODHD paths
+
+This keeps field mapping flexible when EODHD fields differ across companies,
+security types, or endpoint versions.
 """
 
 from __future__ import annotations
@@ -51,13 +53,58 @@ def get_nested_value(data: dict[str, Any], raw_path: str | None) -> Any:
     return current
 
 
+def get_candidate_paths(spec: dict[str, Any]) -> list[str]:
+    """
+    Return ordered raw paths from a mapping spec.
+
+    Backward compatible:
+    - old style: raw_path: "General.Code"
+    - new style: raw_paths: ["General.PrimaryTicker", "General.Code"]
+    """
+    raw_paths = spec.get("raw_paths")
+
+    if isinstance(raw_paths, list):
+        return [str(path) for path in raw_paths if path]
+
+    raw_path = spec.get("raw_path")
+
+    if raw_path:
+        return [str(raw_path)]
+
+    return []
+
+
+def get_first_available_value(
+    data: dict[str, Any],
+    candidate_paths: list[str],
+) -> tuple[Any, str | None]:
+    """
+    Return the first non-missing value from candidate paths.
+
+    Returns:
+    - value
+    - raw path used
+    """
+    for raw_path in candidate_paths:
+        value = get_nested_value(data=data, raw_path=raw_path)
+
+        if value is not None and value != "":
+            return value, raw_path
+
+    return None, None
+
+
 def normalize_fundamentals(
     data: dict[str, Any],
     field_mapping: dict[str, Any],
     source_symbol: str | None = None,
+    include_source_paths: bool = False,
 ) -> dict[str, Any]:
     """
     Normalize one EODHD fundamentals JSON response into one flat row.
+
+    If include_source_paths=True, also add:
+    - <normalized_field>__source_path
     """
     mapped_fields = field_mapping.get("mapped_fields", {})
 
@@ -70,8 +117,21 @@ def normalize_fundamentals(
     }
 
     for normalized_name, spec in mapped_fields.items():
-        raw_path = spec.get("raw_path")
-        row[normalized_name] = get_nested_value(data=data, raw_path=raw_path)
+        if not isinstance(spec, dict):
+            raise TypeError(
+                f"Mapping spec for {normalized_name} must be a dictionary."
+            )
+
+        candidate_paths = get_candidate_paths(spec)
+        value, source_path = get_first_available_value(
+            data=data,
+            candidate_paths=candidate_paths,
+        )
+
+        row[normalized_name] = value
+
+        if include_source_paths:
+            row[f"{normalized_name}__source_path"] = source_path
 
     return row
 

@@ -1,7 +1,7 @@
 """
 Tests for EODHD fundamentals normalization.
 
-These tests use tiny fake dictionaries so they do not require:
+These tests use small fake dictionaries so they do not require:
 - API access
 - .env
 - raw JSON files
@@ -13,6 +13,8 @@ import pytest
 import yaml
 
 from src.normalization import (
+    get_candidate_paths,
+    get_first_available_value,
     get_nested_value,
     load_field_mapping,
     normalize_fundamentals,
@@ -45,7 +47,74 @@ def test_get_nested_value_returns_none_for_missing_path():
     assert result is None
 
 
-def test_normalize_fundamentals_creates_flat_row():
+def test_get_candidate_paths_supports_new_raw_paths_list():
+    spec = {
+        "raw_paths": [
+            "Valuation.TrailingPE",
+            "Highlights.PERatio",
+        ]
+    }
+
+    result = get_candidate_paths(spec)
+
+    assert result == [
+        "Valuation.TrailingPE",
+        "Highlights.PERatio",
+    ]
+
+
+def test_get_candidate_paths_supports_old_raw_path_style():
+    spec = {
+        "raw_path": "General.Code",
+    }
+
+    result = get_candidate_paths(spec)
+
+    assert result == ["General.Code"]
+
+
+def test_get_first_available_value_uses_first_non_missing_path():
+    data = {
+        "General": {
+            "Code": "AAPL",
+        },
+        "Highlights": {
+            "PERatio": 30.5,
+        },
+    }
+
+    value, source_path = get_first_available_value(
+        data=data,
+        candidate_paths=[
+            "Valuation.TrailingPE",
+            "Highlights.PERatio",
+        ],
+    )
+
+    assert value == 30.5
+    assert source_path == "Highlights.PERatio"
+
+
+def test_get_first_available_value_returns_none_when_all_paths_missing():
+    data = {
+        "General": {
+            "Code": "AAPL",
+        }
+    }
+
+    value, source_path = get_first_available_value(
+        data=data,
+        candidate_paths=[
+            "Valuation.TrailingPE",
+            "Highlights.PERatio",
+        ],
+    )
+
+    assert value is None
+    assert source_path is None
+
+
+def test_normalize_fundamentals_creates_flat_row_with_raw_path_style():
     data = {
         "General": {
             "Code": "AAPL",
@@ -93,6 +162,95 @@ def test_normalize_fundamentals_creates_flat_row():
     assert "normalized_at_utc" in row
 
 
+def test_normalize_fundamentals_creates_flat_row_with_raw_paths_style():
+    data = {
+        "General": {
+            "Code": "AAPL",
+            "PrimaryTicker": "AAPL.US",
+            "Name": "Apple Inc",
+        },
+        "Highlights": {
+            "PERatio": 30.5,
+        },
+        "Valuation": {
+            "TrailingPE": 31.0,
+        },
+    }
+
+    field_mapping = {
+        "mapped_fields": {
+            "ticker": {
+                "raw_paths": [
+                    "General.PrimaryTicker",
+                    "General.Code",
+                ],
+            },
+            "name": {
+                "raw_paths": [
+                    "General.Name",
+                ],
+            },
+            "trailing_pe": {
+                "raw_paths": [
+                    "Valuation.TrailingPE",
+                    "Highlights.PERatio",
+                ],
+            },
+        }
+    }
+
+    row = normalize_fundamentals(
+        data=data,
+        field_mapping=field_mapping,
+        source_symbol="AAPL.US",
+    )
+
+    assert row["source_symbol"] == "AAPL.US"
+    assert row["ticker"] == "AAPL.US"
+    assert row["name"] == "Apple Inc"
+    assert row["trailing_pe"] == 31.0
+
+
+def test_normalize_fundamentals_can_include_source_paths():
+    data = {
+        "General": {
+            "Code": "AAPL",
+        },
+        "Highlights": {
+            "PERatio": 30.5,
+        },
+    }
+
+    field_mapping = {
+        "mapped_fields": {
+            "ticker": {
+                "raw_paths": [
+                    "General.PrimaryTicker",
+                    "General.Code",
+                ],
+            },
+            "trailing_pe": {
+                "raw_paths": [
+                    "Valuation.TrailingPE",
+                    "Highlights.PERatio",
+                ],
+            },
+        }
+    }
+
+    row = normalize_fundamentals(
+        data=data,
+        field_mapping=field_mapping,
+        source_symbol="AAPL.US",
+        include_source_paths=True,
+    )
+
+    assert row["ticker"] == "AAPL"
+    assert row["ticker__source_path"] == "General.Code"
+    assert row["trailing_pe"] == 30.5
+    assert row["trailing_pe__source_path"] == "Highlights.PERatio"
+
+
 def test_summarize_missing_values_counts_missing_fields():
     row = {
         "ticker": "AAPL",
@@ -114,7 +272,11 @@ def test_load_field_mapping_reads_yaml(tmp_path: Path):
     mapping = {
         "mapped_fields": {
             "ticker": {
-                "raw_path": "General.Code",
+                "raw_paths": [
+                    "General.PrimaryTicker",
+                    "General.Code",
+                ],
+                "raw_path": "General.PrimaryTicker",
             }
         }
     }
@@ -124,7 +286,11 @@ def test_load_field_mapping_reads_yaml(tmp_path: Path):
 
     loaded = load_field_mapping(mapping_path)
 
-    assert loaded["mapped_fields"]["ticker"]["raw_path"] == "General.Code"
+    assert loaded["mapped_fields"]["ticker"]["raw_paths"] == [
+        "General.PrimaryTicker",
+        "General.Code",
+    ]
+    assert loaded["mapped_fields"]["ticker"]["raw_path"] == "General.PrimaryTicker"
 
 
 def test_load_field_mapping_missing_file_raises_error(tmp_path: Path):
