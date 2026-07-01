@@ -24,11 +24,12 @@ mapped_fields:
   ticker:
     raw_paths:
     - General.PrimaryTicker
-    - General.Code
     raw_path: General.PrimaryTicker
     category: identity
     required: true
-    description: Best available ticker identifier from fundamentals.
+    description: Primary ticker with exchange suffix from General.PrimaryTicker. If
+      missing, use source_symbol outside raw path mapping; do not silently fallback
+      to suffix-less General.Code.
   name:
     raw_paths:
     - General.Name
@@ -49,7 +50,8 @@ mapped_fields:
     raw_path: General.Exchange
     category: identity
     required: true
-    description: Exchange code or EODHD exchange identifier.
+    description: Exchange value from EODHD General.Exchange. May be display exchange/name/code
+      rather than the API ticker suffix.
   security_type:
     raw_paths:
     - General.Type
@@ -67,11 +69,10 @@ mapped_fields:
   country:
     raw_paths:
     - General.CountryName
-    - General.CountryISO
     raw_path: General.CountryName
     category: identity
     required: false
-    description: Company country.
+    description: Company country name from General.CountryName.
   country_iso:
     raw_paths:
     - General.CountryISO
@@ -82,11 +83,11 @@ mapped_fields:
   currency:
     raw_paths:
     - General.CurrencyCode
-    - General.CurrencyName
     raw_path: General.CurrencyCode
     category: metadata
     required: true
-    description: Reported currency.
+    description: Security currency code from General.CurrencyCode. Do not assume this
+      is the financial-statement reporting currency without verification.
   sector:
     raw_paths:
     - General.Sector
@@ -106,7 +107,7 @@ mapped_fields:
     - General.IsDelisted
     raw_path: General.IsDelisted
     category: identity
-    required: false
+    required: true
     description: Whether the security is delisted, if provided.
   isin:
     raw_paths:
@@ -155,7 +156,7 @@ mapped_fields:
     - General.UpdatedAt
     raw_path: General.UpdatedAt
     category: metadata
-    required: false
+    required: true
     description: EODHD fundamentals update timestamp.
   market_capitalization:
     raw_paths:
@@ -185,7 +186,8 @@ mapped_fields:
     raw_path: Highlights.PERatio
     category: valuation
     required: false
-    description: Price-to-earnings ratio.
+    description: Backward-compatible PE alias. Prefer trailing_pe as the canonical
+      scoring field.
   trailing_pe:
     raw_paths:
     - Valuation.TrailingPE
@@ -214,7 +216,8 @@ mapped_fields:
     raw_path: Highlights.BookValue
     category: valuation
     required: false
-    description: Book value metric.
+    description: Book value field from EODHD Highlights.BookValue. Exact unit/definition
+      should be verified before using in valuation calculations.
   price_sales_ttm:
     raw_paths:
     - Valuation.PriceSalesTTM
@@ -245,13 +248,13 @@ mapped_fields:
     description: Enterprise value to EBITDA.
   dividend_yield:
     raw_paths:
-    - SplitsDividends.ForwardAnnualDividendYield
     - Highlights.DividendYield
-    raw_path: SplitsDividends.ForwardAnnualDividendYield
+    - SplitsDividends.ForwardAnnualDividendYield
+    raw_path: Highlights.DividendYield
     category: dividends
     required: false
-    description: Dividend yield. Prefer explicit forward annual dividend yield if
-      available.
+    description: Dividend yield. Prefer Highlights.DividendYield; fallback to forward
+      annual dividend yield only if current dividend yield is unavailable.
   payout_ratio:
     raw_paths:
     - SplitsDividends.PayoutRatio
@@ -334,7 +337,7 @@ mapped_fields:
     - Highlights.MostRecentQuarter
     raw_path: Highlights.MostRecentQuarter
     category: metadata
-    required: false
+    required: true
     description: Most recent reported quarter.
   shares_outstanding:
     raw_paths:
@@ -357,4 +360,58 @@ mapped_fields:
     category: stability
     required: false
     description: Beta.
+  currency_name:
+    raw_paths:
+    - General.CurrencyName
+    raw_path: General.CurrencyName
+    category: metadata
+    required: false
+    description: Currency display name from General.CurrencyName.
+  currency_symbol:
+    raw_paths:
+    - General.CurrencySymbol
+    raw_path: General.CurrencySymbol
+    category: metadata
+    required: false
+    description: Currency symbol from General.CurrencySymbol.
+  forward_annual_dividend_yield:
+    raw_paths:
+    - SplitsDividends.ForwardAnnualDividendYield
+    raw_path: SplitsDividends.ForwardAnnualDividendYield
+    category: dividends
+    required: false
+    description: Forward annual dividend yield from SplitsDividends.ForwardAnnualDividendYield.
 missing_fields: {}
+derived_fields_needed:
+  latest_revenue:
+    reason: Needed for sales-multiple valuation and sanity checks.
+    source: computed_from_financial_statements
+    status: handled_in_financial_statement_summary_or_C5
+  latest_net_income:
+    reason: Needed for earnings-power valuation.
+    source: computed_from_financial_statements
+    status: handled_in_financial_statement_summary_or_C5
+  latest_free_cash_flow:
+    reason: Needed for FCF valuation.
+    source: computed_from_financial_statements
+    status: handled_in_financial_statement_summary_or_C5
+  latest_net_margin:
+    reason: Needed to reject weak sales-multiple valuations.
+    source: computed_from latest_net_income / latest_revenue
+    status: handled_in_financial_statement_summary_or_C5
+  latest_fcf_margin:
+    reason: Needed to assess cash conversion.
+    source: computed_from latest_free_cash_flow / latest_revenue
+    status: handled_in_financial_statement_summary_or_C5
+  latest_liabilities_to_assets:
+    reason: Needed for balance-sheet risk filtering.
+    source: computed_from total liabilities / total assets
+    status: handled_in_financial_statement_summary_or_C5
+  required_fields_missing:
+    reason: Needed for scoring and research queue data-quality flags.
+    source: computed_by_data_quality_layer
+    status: planned_for_C3
+  stale_data_flag:
+    reason: Needed to prevent stale fundamentals from receiving normal scores.
+    source: computed_by_data_quality_layer
+    status: planned_for_C3
